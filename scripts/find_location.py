@@ -42,12 +42,11 @@ def find_disease_location(text):
         
 
 #   Add geocoding if desired
-#   for location_text in locations:
-#     location = geolocator.geocode(location_text)
-#     if location:
-#       print(f"  - {location.address}: {location.latitude}, {location.longitude}")
+def get_coords(location_text):
+    location = geolocator.geocode(location_text)
+    if location:
+        print(f"  - {location.address}: {location.latitude}, {location.longitude}")
 
-  return locations
 
 # Example usage
 
@@ -118,4 +117,5 @@ def find_disease_locations(text, disease_keywords):
     return disease_locations
 
 for disease_location in find_disease_locations(text, disease_keywords):
+    get_coords(disease_location[0])
     print(f"Disease Mention: {disease_location[0]} \nLocation: {disease_location[1]}\n")
