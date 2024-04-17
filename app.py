@@ -17,6 +17,8 @@ def ocr(folderpath: str, pdfname: str):
     print(f"OCR on folder: {folderpath}")
     if not os.path.exists("text/" + pdfname):
         os.makedirs("text/" + pdfname)
+    else:
+        return
     for filename in os.listdir(folderpath):
         if filename.endswith(".jpg"):
             print(f"Performing OCR on: {filename}")
@@ -98,7 +100,6 @@ def main(folder_path: str):
             paragraphs = [p for p in paragraphs if len(p) > 30]
             preprocessed_paragraphs = [preprocess_text(p) for p in paragraphs]
             locations = find_keyword_locations(ocrtext, ["attack", "crime", "election", "fire", "flood", "hurricane", "infection", "outbreak", "pandemic", "protest", "riot", "shooting", "strike", "terror"])
-            print(locations)
             for keyword_location in locations:
                 address, lat, lon = get_coords(keyword_location[2])
                 if keyword_location[2] is None or address is None or lat is None or lon is None:
@@ -106,10 +107,11 @@ def main(folder_path: str):
                 print(f"Keyword Mention: {keyword_location[0]} \nParagraph: {keyword_location[1]}\nLocation: {address}\nLatitude: {lat}\nLongitude: {lon}\n")
                 data.append({
                     "Keyword": keyword_location[0],
-                    "Paragraph": keyword_location[1],
+                    "Paragraph": keyword_location[1].replace("\n", " "),
                     "Address": address,
                     "Latitude": lat,
-                    "Longitude": lon
+                    "Longitude": lon,
+                    "page": txtfile,
                 })
         excel_file = os.path.join("data", f"{filename}.xlsx")
         df = pd.DataFrame(data)
