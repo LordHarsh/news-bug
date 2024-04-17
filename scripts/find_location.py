@@ -41,7 +41,9 @@ matcher.add("LOCATION", location_patterns)
 #   Add geocoding if desired
 def get_coords(location_text):
     location = geolocator.geocode(location_text)
-    return location.address, location.latitude, location.longitude
+    if location:
+        return location.address, location.latitude, location.longitude
+    return None, None, None
     if location:
         print(f"  - {location.address}: {location.latitude}, {location.longitude}")
 
