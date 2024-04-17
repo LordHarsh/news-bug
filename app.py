@@ -4,7 +4,7 @@ import sys
 from collections import defaultdict
 import os
 # import cv2
-# import pytesseract
+import pytesseract
 # from PyPDF2 import PdfReader
 from pdf2image import convert_from_path
 
@@ -26,19 +26,16 @@ nlp = spacy.load("en_core_web_trf")
 #     return text
 
 
-# def ocr(folderpath: str):
-#     text = ""
-#     if not os.path.exists("text"):
-#         os.makedirs("text")
-#     for filename in os.listdir(folderpath):
-#         if filename.endswith(".jpg"):
-#             print(f"Performing OCR on: {filename}")
-#             img = cv2.imread(os.path.join(folderpath, filename))
-#             text += "\n" + pytesseract.image_to_string(img)
-#             with open(f"text/{filename}.txt", "w") as f:
-#                 f.write(text[filename])
-
-#     return text
+def ocr(folderpath: str):
+    text = ""
+    for filename in os.listdir(folderpath):
+        if filename.endswith(".jpg"):
+            print(f"Performing OCR on: {filename}")
+            # img = cv2.imread(os.path.join(folderpath, filename))
+            text += "\n" + pytesseract.image_to_string(os.path.join(folderpath, filename))
+            with open(f"text/{filename}.txt", "w") as f:
+                f.write(text[filename])
+    return text
 
 
 def preprocess_text(text):
@@ -68,7 +65,7 @@ def group_paragraphs(paragraphs):
     return grouped_paragraphs
 
 
-def convert(filepath: str):
+def convert(filepath: str, img_destination_folder: str):
     print(filepath)
     filename = os.path.splitext(os.path.basename(filepath))[0]
     print(f"Converting pdf: {filename}")
@@ -76,8 +73,8 @@ def convert(filepath: str):
 
     print(f"PDF converted: {filename} done")
     for i in range(len(images)):
-        images[i].save("images/" + filename + "/page" + str(i) + ".jpg", "JPEG")
-    print(f"Images saved to: images/{filename}")
+        images[i].save(img_destination_folder + "/page" + str(i) + ".jpg", "JPEG")
+    print(f"Images saved to: {img_destination_folder}")
     # clear memory after converting
     del images
 
@@ -90,6 +87,7 @@ def main(folder_path: str):
         os.makedirs("text")
     if not os.path.exists("images"):
         os.makedirs("images")
+    
     for file in files:
         filepath = os.path.join(folder_path, file)
         # create folder text/filename if not exists
@@ -98,7 +96,10 @@ def main(folder_path: str):
         if not os.path.exists("images/" + filename):
             os.makedirs("images/" + filename)
         # Convert pdf to images
-        convert(filepath)
+        # convert(filepath, img_destination_folder)
+        
+        ocrtxt = ocr(img_destination_folder)
+        
 
         # # Extract text from the PDF file
         # raw_text = extract_text_from_pdf(file_path)
