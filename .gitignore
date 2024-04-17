@@ -5,3 +5,4 @@ data/
 text1/
 input/
 .venv/
+__pycache__/
