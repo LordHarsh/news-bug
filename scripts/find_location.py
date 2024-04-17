@@ -41,6 +41,7 @@ matcher.add("LOCATION", location_patterns)
 #   Add geocoding if desired
 def get_coords(location_text):
     location = geolocator.geocode(location_text)
+    return location.address, location.latitude, location.longitude
     if location:
         print(f"  - {location.address}: {location.latitude}, {location.longitude}")
 
@@ -76,7 +77,7 @@ def find_keyword_locations(text, disease_keywords):
     # Split the text into paragraphs
     paragraphs = text.split('\n\n')
 
-    # List to store the disease and its location
+    # List to store the keyword, nearby text, and nearest location
     disease_locations = []
 
     for paragraph in paragraphs:
@@ -84,14 +85,23 @@ def find_keyword_locations(text, disease_keywords):
         doc = nlp(paragraph)
 
         # Check if any disease keyword is in the paragraph
-        if any(disease in doc.text.lower() for disease in disease_keywords):
-            # Use Spacy's NER to find any GPE in the paragraph
-            for ent in doc.ents:
-                if ent.label_ == 'GPE':
-                    # Store the disease and its location
-                    disease_locations.append((doc.text, ent.text))
+        for keyword in disease_keywords:
+            if keyword.lower() in doc.text.lower():
+                # Find the nearest location (GPE) to the keyword
+                nearest_location = None
+                min_distance = float('inf')
+                for ent in doc.ents:
+                    if ent.label_ == 'GPE':
+                        distance = doc.text.lower().index(keyword.lower()) - doc.text.lower().index(ent.text.lower())
+                        if abs(distance) < min_distance:
+                            min_distance = abs(distance)
+                            nearest_location = ent.text
+
+                # Store the keyword, nearby text, and nearest location
+                disease_locations.append((keyword, paragraph, nearest_location))
 
     return disease_locations
+
 
     
 if __name__ == "__main__":
