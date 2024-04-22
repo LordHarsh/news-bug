@@ -99,10 +99,10 @@ def main(folder_path: str):
             paragraphs = re.split("\n\n+", ocrtext)
             paragraphs = [p for p in paragraphs if len(p) > 30]
             preprocessed_paragraphs = [preprocess_text(p) for p in paragraphs]
-            locations = find_keyword_locations(ocrtext, ["attack", "crime", "election", "fire", "flood", "hurricane", "infection", "outbreak", "pandemic", "protest", "riot", "shooting", "strike", "terror"])
+            locations = find_keyword_locations(ocrtext, ["fever", "pandemic", "cold", "covid", "virus", "influenza", "LSD"])
             for keyword_location in locations:
                 address, lat, lon = get_coords(keyword_location[2])
-                if keyword_location[2] is None or address is None or lat is None or lon is None:
+                if (keyword_location[2] is None):
                     continue
                 print(f"Keyword Mention: {keyword_location[0]} \nParagraph: {keyword_location[1]}\nLocation: {address}\nLatitude: {lat}\nLongitude: {lon}\n")
                 data.append({
