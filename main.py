@@ -7,7 +7,7 @@ import pytesseract
 from pdf2image import convert_from_path
 from scripts.find_location import find_keyword_locations, get_coords
 import pandas as pd
-from fastapi import FastAPI, Request, UploadFile, Form
+from fastapi import FastAPI, Request, UploadFile, Form, File, BackgroundTasks
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,76 +15,115 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import uvicorn
 import pickle
+from datetime import datetime
 # from models.model import train_model, train_and_evaluate
-# from utils.database import connect_to_mongo, insert_record, get_predictions
+from scripts.database import connect_to_mongo, insert_record, update_text, update_data, update_status, get_all_names, get_record_by_id
+import pymongo
 import os
 import random
-templates = Jinja2Templates(directory="templates")
+from scripts.database import connect_to_mongo
+
 
 # Load the spaCy model
 nlp = spacy.load("en_core_web_trf")
 
 app = FastAPI()
 
-class FormData(BaseModel):
-    keywords: str = Form(...)
-    file: UploadFile = Form(...)
+templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/data", response_class=HTMLResponse)
+def home(request: Request):
+    return templates.TemplateResponse("dtest.html", {"request": request})
+
     
-@app.post("/process_pdf")
-async def process_pdf(data: FormData):
+@app.post("/upload_pdf")
+async def process_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(...), newspaper_name: str = Form(...), date: datetime = Form(...)):
     # Create a folder to store the uploaded file
+    print(f"Newspaper Name: {newspaper_name}")
+    print(f"Date: {date}")
+    foldername = os.path.splitext(file.filename)[0]+str(random.randint(0, 1000))
+    filename = file.filename
     if not os.path.exists("uploads"):
         os.makedirs("uploads")
-    if not os.path.exists("uploads/input"):
-        os.makedirs("uploads/input")
-    if not os.path.exists("uploads/images"):
-        os.makedirs("uploads/images")
-    if not os.path.exists("uploads/text"):
-        os.makedirs("uploads/text")
-    # Write the file to disk with random name
-    filename = os.path.splitext(data.file.filename)[0]+str(random.randint(0, 1000))
-    with open(f"uploads/{filename}", "wb") as f:
-        f.write(data.file.file.read())
-    convert(f"uploads/{filename}", f"uploads/images/{filename}")
-    ocr(f"uploads/images/{filename}", pdfname=filename)
+    if not os.path.exists(f"uploads/{foldername}"):
+        os.makedirs(f"uploads/{foldername}")
+    if not os.path.exists(f"uploads/{foldername}/input"):
+        os.makedirs(f"uploads/{foldername}/input")
+    if not os.path.exists(f"uploads/{foldername}/images"):
+        os.makedirs(f"uploads/{foldername}/images")
+    if not os.path.exists(f"uploads/{foldername}/text"):
+        os.makedirs(f"uploads/{foldername}/text")
+    # Write the file to disk with random name pdfname=filename, 
+    with open(f"uploads/{foldername}/input/{filename}", "wb") as f:
+        f.write(file.file.read())
+    background_tasks.add_task(process_and_save_data, foldername, filename, newspaper_name, date)
+    return {"message": "Successfully Uploaded and Started Processing"}
+    
+@app.get("/data/names")
+def get_all_records():
+    collection = connect_to_mongo()
+    records = get_all_names(collection)
+    records = [{**record, '_id': record['_id'].__str__()} for record in records]
+    return records
+    
+@app.get("/data/{_id}")
+def get_record_data(_id: str):
+    collection = connect_to_mongo()
+    record = get_record_by_id(collection, _id)
+    if record is None:
+        return {"error": "Record not found"}
+    record['_id'] = record['_id'].__str__()
+    return record
+
+
+
+def process_and_save_data(foldername: str, filename: str, newspaper_name: str, date: datetime):
+    collection = connect_to_mongo()
+    _id: str = insert_record(collection, newspaper_name, date)
+    convert(f"uploads/{foldername}/input/{filename}", f"uploads/{foldername}/images")
+    update_status(collection, _id, "Converting to text...")
+    ocr(f"uploads/{foldername}/images", textfolder=f"uploads/{foldername}/text", collection=collection, _id=_id)
+    update_status(collection, _id, "Processing data with NER...")
     data = []
-    for txtfile in os.listdir(f"uploads/text/{filename}"):
+    for txtfile in os.listdir(f"uploads/{foldername}/text"):
       ocrtext = ""
       print(f"Reading text from: {txtfile}")
-      with open(f"text/{filename}/{txtfile}", "r") as f:
+      with open(f"uploads/{foldername}/text/{txtfile}", "r") as f:
           ocrtext += f.read()
       paragraphs = re.split("\n\n+", ocrtext)
       paragraphs = [p for p in paragraphs if len(p) > 30]
-      locations = find_keyword_locations(ocrtext, [data.keywords])
+      locations = find_keyword_locations(ocrtext, ["virus", "influenza", "LSD"])
       for keyword_location in locations:
           address, lat, lon = get_coords(keyword_location[2])
           if (keyword_location[2] is None):
               continue
-          print(f"Keyword Mention: {keyword_location[0]} \nParagraph: {keyword_location[1]}\nLocation: {address}\nLatitude: {lat}\nLongitude: {lon}\n")
+        #   print(f"Keyword Mention: {keyword_location[0]} \nParagraph: {keyword_location[1]}\nLocation: {address}\nLatitude: {lat}\nLongitude: {lon}\n")
           data.append({
-              "Keyword": keyword_location[0],
-              "Paragraph": keyword_location[1].replace("\n", " "),
-              "Address": address,
-              "Latitude": lat,
-              "Longitude": lon,
+              "keyword": keyword_location[0],
+              "address": address,
+              "latitude": lat,
+              "longitude": lon,
               "page": txtfile,
+              "paragraph": keyword_location[1].replace("\n", " "),
           })
+    update_data(collection, _id, data)
     df = pd.DataFrame(data)
-    return df
+    print("Completed")
+    print(df)
 
-def ocr(folderpath: str, pdfname: str):
+def ocr(folderpath: str, textfolder: str, collection: pymongo.collection.Collection, _id: str):
     print(f"OCR on folder: {folderpath}")
-    if not os.path.exists("text/" + pdfname):
-        os.makedirs("text/" + pdfname)
-    else:
-        return
     for filename in os.listdir(folderpath):
         if filename.endswith(".jpg"):
             print(f"Performing OCR on: {filename}")
             page_text = pytesseract.image_to_string(os.path.join(folderpath, filename))
-            with open(f"uploads/text/{pdfname}/{os.path.splitext(os.path.basename(filename))[0]}.txt", "w") as f:
+            update_text(collection, _id, filename, page_text)
+            with open(f"{textfolder}/{os.path.splitext(os.path.basename(filename))[0]}.txt", "w") as f:
                 f.write(page_text)
-
 
 def preprocess_text(text):
     """

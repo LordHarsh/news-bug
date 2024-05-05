@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Data Page</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            float: left;
+            width: 15%;
+            overflow: hidden;
+        }
+        .content {
+            float: left; 
+            width: 85%;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body id="root">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark" style="margin-bottom: 50px">
+        <a class="navbar-brand" href="#">NewBug</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ml-auto">
+                <li class="nav-item">
+                    <button class="btn btn-outline-light my-2 my-sm-0" onclick="window.location.href='/data.html'">View Data</button>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    <div id="data_view"></div>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="sidebar" id="sidebar">
+
+            </div>
+            <div class="content" id="content">
+
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,line-clamp,container-queries"></script>
+  
+    <!-- Load our React component. -->
+    <!-- <script src="/static/data_view.js" type="text/babel"></script> -->
+    <script src="/static/sidebar.js" type="text/babel"></script>
+    <script>
+
+    </script>
+</body>
+</html>

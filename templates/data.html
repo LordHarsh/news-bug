@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Data Page</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+
+        .content {
+            float: left; 
+            width: 85%;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark" style="margin-bottom: 50px">
+        <a class="navbar-brand" href="#">NewBug</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ml-auto">
+                <li class="nav-item">
+                    <button class="btn btn-outline-light my-2 my-sm-0" onclick="window.location.href='/data.html'">View Data</button>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-3 sidebar">
+                <button class="btn btn-primary d-block d-md-none mb-3" type="button" data-toggle="collapse" data-target="#sidebarCollapse" aria-expanded="false" aria-controls="sidebarCollapse">
+                    Toggle Sidebar
+                </button>
+                <div class="collapse d-md-block" id="sidebarCollapse">
+                    <h5>Newspaper List</h5>
+                    <ul class="list-group" id="newspaperList">
+                        <!-- Dynamically populated with newspaper names -->
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-9 content">
+                <h2 id="selectedNewspaper">Select a newspaper to view data</h2>
+                <div id="data-table">
+                    <!-- Data table for the selected newspaper will be displayed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        // Mock data for newspaper names and data tables
+        const newspapers = [
+            { name: "Newspaper 1", data: "<table><thead><tr><th>Column 1</th><th>Column 2</th></tr></thead><tbody><tr><td>Data 1</td><td>Data 2</td></tr></tbody></table>" },
+            { name: "Newspaper 2", data: "<table><thead><tr><th>Column A</th><th>Column B</th></tr></thead><tbody><tr><td>Data A</td><td>Data B</td></tr></tbody></table>" }
+            // Add more newspaper data as needed
+        ];
+
+        // Populate the sidebar with the newspaper names
+        const sidebar = document.getElementById('newspaperList');
+        newspapers.forEach(newspaper => {
+            const listItem = document.createElement('li');
+            listItem.className = 'list-group-item';
+            listItem.textContent = newspaper.name;
+            listItem.addEventListener('click', () => {
+                document.getElementById('selectedNewspaper').textContent = newspaper.name;
+                document.getElementById('data-table').innerHTML = newspaper.data;
+            });
+            sidebar.appendChild(listItem);
+        });
+    </script>
+</body>
+</html>
