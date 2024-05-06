@@ -22,12 +22,22 @@ import pymongo
 import os
 import random
 from scripts.database import connect_to_mongo
-
+from fastapi.middleware.cors import CORSMiddleware
 
 # Load the spaCy model
 nlp = spacy.load("en_core_web_trf")
 
 app = FastAPI()
+origins = [
+    "*",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -67,7 +77,7 @@ async def process_pdf(background_tasks: BackgroundTasks, file: UploadFile = File
 def get_all_records():
     collection = connect_to_mongo()
     records = get_all_names(collection)
-    records = [{**record, '_id': record['_id'].__str__()} for record in records]
+    records = [{**record, 'id': record['_id'].str_()} for record in records]
     return records
     
 @app.get("/data/{_id}")
@@ -76,7 +86,7 @@ def get_record_data(_id: str):
     record = get_record_by_id(collection, _id)
     if record is None:
         return {"error": "Record not found"}
-    record['_id'] = record['_id'].__str__()
+    record['id'] = record['_id'].str_()
     return record
 
 
@@ -84,6 +94,7 @@ def get_record_data(_id: str):
 def process_and_save_data(foldername: str, filename: str, newspaper_name: str, date: datetime):
     collection = connect_to_mongo()
     _id: str = insert_record(collection, newspaper_name, date)
+    update_status(collection, _id, "Converting to images...")
     convert(f"uploads/{foldername}/input/{filename}", f"uploads/{foldername}/images")
     update_status(collection, _id, "Converting to text...")
     ocr(f"uploads/{foldername}/images", textfolder=f"uploads/{foldername}/text", collection=collection, _id=_id)
@@ -217,7 +228,7 @@ def main(folder_path: str):
         print(f"Data saved to {excel_file}")
 
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     port = int(os.environ.get("PORT", 8000))
     print("Starting on port: {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)

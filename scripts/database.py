@@ -3,6 +3,9 @@ import os
 import datetime
 import pymongo
 from bson.objectid import ObjectId
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def connect_to_mongo(database_name='news_bug', collection_name='newspapers'):
     """Connects to a MongoDB database.
@@ -77,7 +80,7 @@ def update_data(collection, _id, data):
     """
     collection.update_one(
         {"_id": _id},
-        {"$set": {"data": data, "status": "Converting to images..."}}
+        {"$set": {"data": data, "status": "Completed"}}
     )
 
 def update_status(collection, _id, status):
@@ -116,7 +119,7 @@ def get_all_names(collection):
     Returns:
         list: A list of all newspaper names in the collection.
     """
-    return list(collection.find({}, {"name": 1, "_id": 1, "date": 1}))
+    return list(collection.find({}, {"pages": 0}))
 
 def get_record_by_id(collection, _id):
     """Retrieves a record from the MongoDB collection by ID.
