@@ -1,0 +1,1 @@
+ReactDOM.render(<h1>Hello</h1>, document.getElementById('data_view'));

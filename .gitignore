@@ -4,5 +4,7 @@ text/
 data/
 text1/
 input/
+uploads/
 .venv/
 __pycache__/
+.env
