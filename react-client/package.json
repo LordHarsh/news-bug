@@ -10,10 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-google-maps/api": "^2.19.3",
     "bootstrap": "^5.3.3",
+    "mapbox-gl": "^3.3.0",
     "react": "^18.2.0",
     "react-bootstrap": "^2.10.2",
     "react-dom": "^18.2.0",
+    "react-map-gl": "^7.1.7",
     "react-router-dom": "^6.23.0"
   },
   "devDependencies": {
