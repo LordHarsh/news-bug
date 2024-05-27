@@ -1,8 +1,6 @@
-import React from "react";
+
 import PropTypes from "prop-types";
-import MapComponent from "./MapContainer";
-import MyMapComponent from "./MyMapComponent";
-import MapView from "./MapView";
+import KeywordMap from "./KeywordMap";
 
 
 const NewspaperDetailsTable = ({ newspaper }) => {
@@ -23,11 +21,7 @@ const NewspaperDetailsTable = ({ newspaper }) => {
       <p>{ISODate(newspaper.date)}</p>
       <p>Uploaded on: {ISODate(newspaper.upload_time)}</p>
       <p>Status: {newspaper.status}</p>
-      {/* <MapComponent data={newspaper.data} /> */}
-      <MapView data={newspaper.data} />
-      
-      {/* <MyMapComponent locations={newspaper.data} /> */}
-      {/* <MapView locations={newspaper.data} /> */}
+      <KeywordMap data={newspaper.data} />
       <h4>Details:</h4>
       <table className="table table-striped">
         <thead>

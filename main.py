@@ -228,7 +228,7 @@ def main(folder_path: str):
         print(f"Data saved to {excel_file}")
 
 
-if _name_ == "main":
+if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print("Starting on port: {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)

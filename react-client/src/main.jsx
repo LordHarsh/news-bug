@@ -5,6 +5,14 @@ import './index.css'
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 
+const apiKey = 'YOUR_API_KEY'; // Replace with your actual API key
+
+window.google = {
+  maps: {
+    ApiaryKey: apiKey,
+  },
+};
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
