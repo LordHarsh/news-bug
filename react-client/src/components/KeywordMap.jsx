@@ -7,6 +7,8 @@ import { Container, Row, Col } from 'react-bootstrap';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import PropTypes from 'prop-types';
+
 
 // Fixing the default icon issue with Leaflet and React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -16,7 +18,6 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-import PropTypes from 'prop-types';
 
 const KeywordMap = ({ data }) => {
   return (
