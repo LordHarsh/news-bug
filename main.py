@@ -7,7 +7,7 @@ import pytesseract
 from pdf2image import convert_from_path
 from scripts.find_location import find_keyword_locations, get_coords
 import pandas as pd
-from fastapi import FastAPI, Request, UploadFile, Form, File, BackgroundTasks
+from fastapi import FastAPI, Request, UploadFile, Form, File, BackgroundTasks, Body
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,14 +15,19 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import uvicorn
 import pickle
-from datetime import datetime
+from datetime import datetime, timedelta
 # from models.model import train_model, train_and_evaluate
-from scripts.database import connect_to_mongo, insert_record, update_text, update_data, update_status, get_all_names, get_record_by_id
+from scripts.database import connect_to_mongo, insert_record, update_text, update_data, update_status, get_all_names, get_record_by_id, get_filter_data, get_filter_data2
 import pymongo
 import os
 import random
 from scripts.database import connect_to_mongo
+import math
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List, Optional, Dict, Any
+import dateutil.parser
+# from bson import ISODate
+
 
 # Load the spaCy model
 nlp = spacy.load("en_core_web_trf")
@@ -49,6 +54,87 @@ def home(request: Request):
 def home(request: Request):
     return templates.TemplateResponse("dtest.html", {"request": request})
 
+
+class FilterRequest(BaseModel):
+    keywords: Optional[List[str]] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius: Optional[float] = None
+
+class DataField(BaseModel):
+    keyword: str
+    address: str
+    latitude: float
+    longitude: float
+    page: str
+    paragraph: str
+
+
+@app.post("/filter")
+async def filter_articles(filter_request: FilterRequest):
+    query = {}
+    date_query = {}
+    location_query = {}
+
+
+
+    
+    stage1 = {
+        '$match': {
+            'status': 'Completed'
+        }
+    }
+    stage2 = {
+        '$project': {
+            'name': 1, 
+            'date': 1, 
+            'status': 1, 
+            'data': 1
+        }
+    }
+    stage3 = {
+        '$unwind': {
+            'path': '$data'
+        }
+    }
+    stage4 = {
+        '$match': {
+        }
+    }
+    
+    if filter_request.start_date or filter_request.end_date:
+        if filter_request.start_date:
+            date_query["$gte"] = filter_request.start_date
+        if filter_request.end_date:
+            date_query["$lte"] = filter_request.end_date
+        query["date"] = date_query
+        stage1['$match']['date'] = date_query
+        
+    
+    
+    
+    if filter_request.latitude and filter_request.longitude and filter_request.radius:
+        location_query = {
+                '$geoWithin': {
+                    '$centerSphere': [
+                        [
+                            filter_request.longitude, filter_request.latitude
+                        ], filter_request.radius / 6378.1
+                    ]
+                }
+            }
+        stage4['$match']['data.location'] = location_query
+    
+    if filter_request.keywords:
+        stage4['$match']['data.keyword'] = {'$in': filter_request.keywords}
+    
+    
+    collection = connect_to_mongo()
+    results = get_filter_data2(collection=collection, stage1=stage1, stage2=stage2, stage3=stage3, stage4=stage4)
+    return results
+    
     
 @app.post("/upload_pdf")
 async def process_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(...), newspaper_name: str = Form(...), date: datetime = Form(...)):
@@ -77,6 +163,7 @@ async def process_pdf(background_tasks: BackgroundTasks, file: UploadFile = File
 def get_all_records():
     collection = connect_to_mongo()
     records = get_all_names(collection)
+    print("This ran")
     records = [{**record, '_id': str(record['_id'])} for record in records]
     return records
     
@@ -114,10 +201,12 @@ def process_and_save_data(foldername: str, filename: str, newspaper_name: str, d
               continue
         #   print(f"Keyword Mention: {keyword_location[0]} \nParagraph: {keyword_location[1]}\nLocation: {address}\nLatitude: {lat}\nLongitude: {lon}\n")
           data.append({
-              "keyword": keyword_location[0],
-              "address": address,
-              "latitude": lat,
-              "longitude": lon,
+              "keyword": keyword_location[0].lower(),
+              "address": address.lower(),
+              "location": {
+                    "type": "Point",
+                    "coordinates": [lon, lat]
+              },
               "page": txtfile,
               "paragraph": keyword_location[1].replace("\n", " "),
           })

@@ -14,6 +14,7 @@ export default function Header ()  {
             <Navbar.Collapse id="basic-navbar-nav" className='tw-justify-end'>
               {/* <Nav className="me-auto">
               </Nav> */}
+                <Button variant="outline-primary" className='tw-mr-4' href='/view'>View</Button>
                 <Button variant="outline-primary" href='/data'>Data</Button>
             </Navbar.Collapse>
           </Container>

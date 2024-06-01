@@ -100,7 +100,8 @@ def update_status(collection, _id, status):
     )
     
 def get_predictions(collection):
-    """Retrieves all records from the MongoDB collection.
+    """Retrieves all records from the MongoDB collection.db.newspapers.createIndex({ "data.location": "2dsphere" });
+
 
     Args:
         collection (pymongo.collection.Collection): The connected MongoDB collection.
@@ -119,7 +120,28 @@ def get_all_names(collection):
     Returns:
         list: A list of all newspaper names in the collection.
     """
-    return list(collection.find({}, {"pages": 0}))
+    data = list(collection.find({}, {"pages": 0}))
+    print("Here")
+    def convert(element):
+        print(element)
+        return {
+            "keyword": element["keyword"],
+            "address": element["address"],
+            "page": element["page"],
+            "paragraph": element["paragraph"],
+            "latitude": element["location"]["coordinates"][1],
+            "longitude": element["location"]["coordinates"][0],
+        }
+    print(data[0].keys())
+    for item in data:
+        print("Item keys", item.keys())
+        items = []
+        for element in item["data"]:
+            print("Element keys", element.keys())
+            items.append(convert(element))
+        item["data"] = items
+    # data = [item.data = convert(element) for item in data for element in item.data]
+    return data
 
 def get_record_by_id(collection, _id):
     """Retrieves a record from the MongoDB collection by ID.
@@ -132,3 +154,38 @@ def get_record_by_id(collection, _id):
         dict: The record with the given ID.
     """
     return collection.find_one({"_id": ObjectId(_id)})
+
+def get_filter_data(collection, query, projection=None):
+    """Retrieves records from the MongoDB collection based on a query.
+
+    Args:
+        collection (pymongo.collection.Collection): The connected MongoDB collection.
+        query (dict): The query to filter records.
+        projection (dict): The projection to filter fields.
+
+    Returns:
+        list: A list of records that match the query.
+    """
+    data = list(collection.find(query, projection))
+    return data
+
+
+def get_filter_data2(collection, stage1, stage2, stage3, stage4):
+
+    pipeline = [stage1, stage2, stage3, stage4]
+    print(pipeline)
+    data = collection.aggregate(pipeline)
+    results = []
+    for item in data:
+        item['_id'] = item['_id'].__str__()
+        item["keyword"] = item["data"]["keyword"]
+        item["address"] = item["data"]["address"]
+        item["page"] = item["data"]["page"]
+        item["paragraph"] = item["data"]["paragraph"]
+        item["latitude"] = item["data"]["location"]["coordinates"][1]
+        item["longitude"] = item["data"]["location"]["coordinates"][0]
+        del item["data"]
+        item['paper_name'] = item['name']
+        item['date'] = item['date'].strftime("%d-%m-%Y")
+        results.append(item)
+    return results

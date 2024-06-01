@@ -2,12 +2,13 @@
 
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import L, { Draggable } from 'leaflet';
 import { Container, Row, Col } from 'react-bootstrap';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import PropTypes from 'prop-types';
+import DraggableMarker from './DraggableMarker';
 
 
 // Fixing the default icon issue with Leaflet and React
@@ -19,7 +20,8 @@ L.Icon.Default.mergeOptions({
 });
 
 
-const KeywordMap = ({ data }) => {
+const KeywordMap = ({ data, showDraggableMarker, position, setPosition, handlePositionChange }) => {
+  console.log(data)
   return (
     <Container>
       <Row>
@@ -39,6 +41,9 @@ const KeywordMap = ({ data }) => {
                 </Popup>
               </Marker>
             ))}
+            {(showDraggableMarker && position && setPosition && handlePositionChange) && (
+              <DraggableMarker position={position} setPosition={setPosition} handlePositionChange={handlePositionChange}/>
+            )}
           </MapContainer>
         </Col>
       </Row>
@@ -48,13 +53,18 @@ const KeywordMap = ({ data }) => {
 
 KeywordMap.propTypes = {
     data: PropTypes.arrayOf(PropTypes.shape({
-      keyword: PropTypes.string.isRequired,
+      keyword: PropTypes.string,
       address: PropTypes.string,
       latitude: PropTypes.number,
       longitude: PropTypes.number,
       page: PropTypes.string,
       paragraph: PropTypes.string,
     })),
+    showDraggableMarker: PropTypes.bool,
+    center: PropTypes.shape({
+      lat: PropTypes.number,
+      lng: PropTypes.number,
+    }),
   };
 
 export default KeywordMap;
