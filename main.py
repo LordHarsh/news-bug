@@ -159,6 +159,11 @@ async def process_pdf(background_tasks: BackgroundTasks, file: UploadFile = File
     background_tasks.add_task(process_and_save_data, foldername, filename, newspaper_name, date)
     return {"message": "Successfully Uploaded and Started Processing"}
     
+@app.post("/submit_url")
+async def submit_url(background_tasks: BackgroundTasks, url: str = Form(...)):
+    print(f"URL: {url}")
+
+
 @app.get("/data/names")
 def get_all_records():
     collection = connect_to_mongo()

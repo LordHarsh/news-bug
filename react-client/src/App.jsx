@@ -7,6 +7,7 @@ import View from "./pages/View";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import './App.css'
 import Header from './components/Header';
+import { Toaster } from 'sonner';
 
 function App() {
   
@@ -14,6 +15,7 @@ function App() {
     <>
     <Header />
       <BrowserRouter>
+        <Toaster className='tw-mr-4' richColors/>
         <Routes>
           <Route path="/" element={<Home />} /> 
           <Route path="/data" element={<Data />} /> 

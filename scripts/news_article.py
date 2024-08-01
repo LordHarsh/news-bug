@@ -1,36 +1,29 @@
 from newspaper import Article
+from datetime import datetime
 import nltk
+
+# Download the necessary NLTK data for text processing
 nltk.download('punkt')
-#A new article from TOI
-url = "http://timesofindia.indiatimes.com/world/china/chinese-expert-warns-of-troops-entering-kashmir/articleshow/59516912.cms"
 
-#For different language newspaper refer above table
-toi_article = Article(url, language="en") # en for English
+def extract_using_newspaper3k(url, platform):
+    print("Extracting article from URL:", url)
+    article = Article(url, language="en")    
+    article.download()
+    
+    # Parse the article
+    article.parse()
+    
+    # Perform natural language processing (NLP)
+    return {
+        "name": article.title + " - " + platform,
+        "date": article.publish_date,
+        "upload_date": datetime.now(),
+        "text": article.text
+    }
 
-#To download the article
-toi_article.download()
-
-#To parse the articleimport nltk
-toi_article.parse()
-
-#To perform natural language processing ie..nlp
-toi_article.nlp()
-
-#To extract title
-print("Article's Title:")
-print(toi_article.title)
-print("n")
-
-#To extract text
-print("Article's Text:")
-print(toi_article.text)
-print("n")
-
-#To extract summary
-print("Article's Summary:")
-print(toi_article.summary)
-print("n")
-
-#To extract keywords
-print("Article's Keywords:")
-print(toi_article.keywords)
+# Example usage
+if __name__ == "__main__":
+    # url = "https://timesofindia.indiatimes.com/india/collective-failure-of-system-rahul-gandhi-on-death-of-3-upsc-aspirants-in-delhi/articleshow/112079124.cms"
+    # url = "https://edition.cnn.com/2024/07/28/middleeast/israel-hezbollah-golan-heights-soccer-strikes-intl/index.html"
+    url = "https://edition.cnn.com/2024/07/17/health/long-covid-risk/index.html"
+    extract_using_newspaper3k(url)
