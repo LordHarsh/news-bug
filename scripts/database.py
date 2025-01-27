@@ -45,6 +45,26 @@ def insert_record(collection, newspaper_name, date):
     record['data'] = []
     _id = collection.insert_one(record).inserted_id
     return _id
+def insert_web_data(collection, data):
+    """Inserts a record into the MongoDB collection.
+
+    Args:
+        collection (pymongo.collection.Collection): The connected MongoDB collection.
+        newspaper_name (str): The name of the newspaper.
+        date (datetime): The date of the newspaper.
+        
+    Returns:
+        str: The ID of the inserted record.
+    """
+    record = {}
+    record['name'] = data['name']
+    record['date'] = data['date']
+    record['upload_time'] = datetime.datetime.now()
+    # record['status'] = 'Processing'
+    # record['pages'] = []
+    record['data'] = data['data']
+    _id = collection.insert_one(record).inserted_id
+    return _id
 
 def update_text(collection, _id, page_no, text):
     """Updates the text of a page in the MongoDB collection.
@@ -123,7 +143,6 @@ def get_all_names(collection):
     data = list(collection.find({}, {"pages": 0}))
     print("Here")
     def convert(element):
-        print(element)
         return {
             "keyword": element["keyword"],
             "address": element["address"],
@@ -132,12 +151,9 @@ def get_all_names(collection):
             "latitude": element["location"]["coordinates"][1],
             "longitude": element["location"]["coordinates"][0],
         }
-    print(data[0].keys())
     for item in data:
-        print("Item keys", item.keys())
         items = []
         for element in item["data"]:
-            print("Element keys", element.keys())
             items.append(convert(element))
         item["data"] = items
     # data = [item.data = convert(element) for item in data for element in item.data]
@@ -172,6 +188,25 @@ def get_filter_data(collection, query, projection=None):
 
 def get_filter_data2(collection, stage1, stage2, stage3, stage4):
 
+    pipeline = [stage1, stage2, stage3, stage4]
+    print(pipeline)
+    data = collection.aggregate(pipeline)
+    results = []
+    for item in data:
+        item['_id'] = item['_id'].__str__()
+        item["keyword"] = item["data"]["keyword"]
+        item["address"] = item["data"]["address"]
+        item["page"] = item["data"]["page"]
+        item["paragraph"] = item["data"]["paragraph"]
+        item["latitude"] = item["data"]["location"]["coordinates"][1]
+        item["longitude"] = item["data"]["location"]["coordinates"][0]
+        del item["data"]
+        item['paper_name'] = item['name']
+        item['date'] = item['date'].strftime("%d-%m-%Y")
+        results.append(item)
+    return results
+
+def get_filter_webdata(collection, stage1, stage2, stage3, stage4):
     pipeline = [stage1, stage2, stage3, stage4]
     print(pipeline)
     data = collection.aggregate(pipeline)

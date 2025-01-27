@@ -29,10 +29,11 @@ const UploadTabs = () => {
   const [uploadStatus, setUploadStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const platforms = ["CNN", "Times of India", "BBC", "Al Jazeera", "Unknown"];
+  const platforms = ["CNN", "Indian Express",  "Times of India", "BBC", "Al Jazeera", "Unknown"];
 
   const extractPlatform = (url) => {
     if (url.includes("cnn.com")) return "CNN";
+    if (url.includes("indianexpress.com")) return "Indian Express";
     if (url.includes("timesofindia.indiatimes.com")) return "Times of India";
     if (url.includes("bbc.com")) return "BBC";
     if (url.includes("aljazeera.com")) return "Al Jazeera";
@@ -45,7 +46,7 @@ const UploadTabs = () => {
       setPlatform(detectedPlatform);
     }
   }, [url]);
-  
+
   console.log("Platform detected: ", platform);
 
   const handleSubmit = async (event) => {
@@ -58,7 +59,7 @@ const UploadTabs = () => {
       formData.append("file", file);
       formData.append("newspaper_name", newspaperName);
       formData.append("date", date);
-
+      console.log(formData);
       setUploadStatus("pending");
 
       const backend_url = import.meta.env.VITE_BACKEND_URL;
@@ -87,15 +88,38 @@ const UploadTabs = () => {
 
   const handleSubmitURL = async (event) => {
     event.preventDefault();
+    const formData = new FormData();
     try {
-      if (url === "" || !url) {
+      if (url === "" || !url || platform === "Unknown") {
         throw new Error("URL field empty");
       }
-      toast.success(`URL submitted: ${url} (Platform: ${platform})`);
-      setUrl("");
-      setPlatform("Unknown");
+      formData.append("url", url);
+      formData.append("platform", platform);
+      setUploadStatus("pending");
+      const backend_url = import.meta.env.VITE_BACKEND_URL;
+      if (!backend_url) {
+        throw new Error("REACT_APP_SERVER_URL is not defined");
+      }
+      console.log(formData);
+      const response = await fetch(`${backend_url}/submit_url`, {
+        method: "POST",
+        body: formData,
+      });
+      if (response.ok) {
+        setUploadStatus("success");
+        setErrorMessage(null);
+        toast.success(`URL submitted: ${url} (Platform: ${platform})`);
+        setUrl("");
+        setPlatform("Unknown");
+      } else {
+        setUploadStatus("error");
+        setErrorMessage("Upload failed. Please try again.");
+      }
     } catch (error) {
+      setUploadStatus("error");
+      console.log(error);
       toast.error(error.message);
+      setErrorMessage("Upload failed: " + error.message);
     }
   };
 
@@ -181,7 +205,9 @@ const UploadTabs = () => {
                 value={url}
                 name="url"
                 required
-                onChange={(event) => {setUrl(event.target.value)}}
+                onChange={(event) => {
+                  setUrl(event.target.value);
+                }}
               />
             </div>
             <div className="tw-space-y-1">
@@ -190,7 +216,7 @@ const UploadTabs = () => {
                 <SelectTrigger>
                   <SelectValue>{platform || "Select platform"}</SelectValue>
                 </SelectTrigger>
-                <SelectContent defaultValue='unknown'>
+                <SelectContent defaultValue="unknown">
                   {platforms.map((p) => (
                     <SelectItem defaultValue={"unknown"} key={p} value={p}>
                       {p}
