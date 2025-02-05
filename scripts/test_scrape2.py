@@ -1,4 +1,4 @@
-from newspaper import Article
+from newspaper import Article, Source
 from datetime import datetime
 import nltk
 import requests
@@ -24,18 +24,6 @@ def extract_using_newspaper3k(url, platform):
         "text": article.text
     }
 
-def get_links(url):
-    """Extract all links from the given URL."""
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    links = set()
-    for a_tag in soup.find_all('a', href=True):
-        link = urljoin(url, a_tag['href'])
-        # add only if link starts with start_url
-        links.add(link)
-    print(f"Found {len(links)} links on {url}")
-    return links
-
 def crawl_and_extract(start_url, platform, max_pages=20):
     """Crawl the web starting from the start_url and extract articles."""
     visited = set()
@@ -46,17 +34,29 @@ def crawl_and_extract(start_url, platform, max_pages=20):
         url = to_visit.pop()
         if url not in visited:
             try:
-                article_data = extract_using_newspaper3k(url, platform)
-                articles.append(article_data)
+                # Use Source to extract articles from the URL
+                source = Source(url, language="en")
+                source.download()
+                source.parse()
+                source.build()
+
+                # Extract articles from the source
+                for article in source.articles:
+                    article.download()
+                    article.parse()
+                    articles.append({
+                        "name": article.title + " - " + platform,
+                        "date": article.publish_date,
+                        "upload_date": datetime.now(),
+                        "text": article.text
+                    })
+                    print(f"Successfully extracted data from: {article.url}")
+
                 visited.add(url)
-                print(f"Successfully extracted data from: {url}")
-                
-                # Extract links from the current page and add them to the to_visit set
-                new_links = get_links(url)
-                to_visit.update(new_links - visited)
                 print(f"To visit: {len(to_visit)}; Visited: {len(visited)}")
             except Exception as e:
                 print(f"Failed to extract data from: {url}. Error: {e}")
+    
     print(visited)
     return articles
 
