@@ -16,6 +16,8 @@ export default function Header ()  {
               </Nav> */}
                 <Button variant="outline-primary" className='tw-mr-4' href='/view'>View</Button>
                 <Button variant="outline-primary" href='/data'>Data</Button>
+                <Button variant="outline-primary" className='tw-ml-3' href='/webdata'>Web Data</Button>
+                <Button variant="outline-primary" className='tw-ml-3' href='/webfilter'>Web Filter</Button>
             </Navbar.Collapse>
           </Container>
         </Navbar>
