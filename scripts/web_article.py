@@ -37,12 +37,11 @@ def fetch_words():
         article_text = content.get_text(strip=True, separator="\n")
         print("Article Text:\n", article_text)
 
-    
+     
     
     # print("\033[91m {}\033[00m" .format(title))
     # print(article_text)
 
 
 if __name__ == "__main__":
-
     fetch_words()

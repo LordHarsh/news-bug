@@ -17,7 +17,8 @@ import uvicorn
 import pickle
 from datetime import datetime, timedelta
 # from models.model import train_model, train_and_evaluate
-from scripts.database import connect_to_mongo, insert_record, update_text, update_data, update_status, get_all_names, get_record_by_id, get_filter_data, get_filter_data2
+from scripts.database import connect_to_mongo, insert_record, update_text, update_data, update_status, get_all_names, get_record_by_id, get_filter_data, get_filter_data2, insert_web_data, get_filter_webdata
+from scripts.extract_article import extract_from_url
 import pymongo
 import os
 import random
@@ -31,6 +32,9 @@ import dateutil.parser
 
 # Load the spaCy model
 nlp = spacy.load("en_core_web_trf")
+
+KEYWORDS = ["virus", "influenza", "LSD", "covid", "fever", "pandemic", "cold"]
+
 
 app = FastAPI()
 origins = [
@@ -70,6 +74,7 @@ class DataField(BaseModel):
     longitude: float
     page: str
     paragraph: str
+
 
 
 @app.post("/filter")
@@ -135,6 +140,61 @@ async def filter_articles(filter_request: FilterRequest):
     results = get_filter_data2(collection=collection, stage1=stage1, stage2=stage2, stage3=stage3, stage4=stage4)
     return results
     
+@app.post("/webfilter")
+async def filter_webdata(filter_request: FilterRequest):
+    query = {}
+    date_query = {}
+    location_query = {}
+
+    stage1 = {
+        '$match': {
+        }
+    }
+    stage2 = {
+        '$project': {
+            'name': 1,
+            'date': 1,
+            'upload_time': 1,
+            'data': 1
+        }
+    }
+    stage3 = {
+        '$unwind': {
+            'path': '$data'
+        }
+    }
+    stage4 = {
+        '$match': {
+        }
+    }
+
+    if filter_request.start_date or filter_request.end_date:
+        if filter_request.start_date:
+            date_query["$gte"] = filter_request.start_date
+        if filter_request.end_date:
+            date_query["$lte"] = filter_request.end_date
+        query["date"] = date_query
+        stage1['$match']['date'] = date_query
+
+    if filter_request.latitude and filter_request.longitude and filter_request.radius:
+        location_query = {
+            '$geoWithin': {
+                '$centerSphere': [
+                    [
+                        filter_request.longitude, filter_request.latitude
+                    ], filter_request.radius / 6378.1
+                ]
+            }
+        }
+        stage4['$match']['data.location'] = location_query
+
+    if filter_request.keywords:
+        stage4['$match']['data.keyword'] = {'$in': filter_request.keywords}
+
+    collection = connect_to_mongo(collection_name='webpages')
+    results = get_filter_webdata(collection, stage1, stage2, stage3, stage4)
+    return results
+
     
 @app.post("/upload_pdf")
 async def process_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(...), newspaper_name: str = Form(...), date: datetime = Form(...)):
@@ -159,11 +219,23 @@ async def process_pdf(background_tasks: BackgroundTasks, file: UploadFile = File
     background_tasks.add_task(process_and_save_data, foldername, filename, newspaper_name, date)
     return {"message": "Successfully Uploaded and Started Processing"}
     
+@app.post("/submit_url")
+async def submit_url(background_tasks: BackgroundTasks, url: str = Form(...), platform: str = Form(...)):
+    background_tasks.add_task(process_url, url, platform)
+    return {"message": "Successfully Submitted URL for Processing"}
+
+
 @app.get("/data/names")
 def get_all_records():
     collection = connect_to_mongo()
     records = get_all_names(collection)
-    print("This ran")
+    records = [{**record, '_id': str(record['_id'])} for record in records]
+    return records
+
+@app.get("/data/webdata")
+def get_all_webdata():
+    collection = connect_to_mongo(collection_name='webpages')
+    records = get_all_names(collection)
     records = [{**record, '_id': str(record['_id'])} for record in records]
     return records
     
@@ -176,7 +248,39 @@ def get_record_data(_id: str):
     record['id'] = record['id'].str()
     return record
 
-
+def process_url(url: str, platform: str):
+    web_data = extract_from_url(platform=platform, url=url)
+    locations = find_keyword_locations(web_data['text'], KEYWORDS)
+    data = []
+    for keyword_location in locations:
+        address, lat, lon = get_coords(keyword_location[2])
+        if keyword_location[2] is None:
+            continue
+        data.append({
+            "keyword": keyword_location[0].lower(),
+            "address": address.lower(),
+            "location": {
+                "type": "Point",
+                "coordinates": [lon, lat]
+            },
+            "page": "webpage",
+            "paragraph": keyword_location[1].replace("\n", " "),
+        })
+    web_data['data'] = data
+    collection = connect_to_mongo(collection_name='webpages')
+    # collection = connect_to_mongo()
+    df = pd.DataFrame(data)
+    insert_web_data(collection, web_data)
+    
+    # Create directory if it doesn't exist
+    os.makedirs("data", exist_ok=True)
+    
+    # Save or overwrite the data to a file with name web_data['name'].csv
+    file_path = f"data/{web_data['name']}.csv"
+    df.to_csv(file_path, index=False)
+    
+    print("Completed")
+    print(df)
 
 def process_and_save_data(foldername: str, filename: str, newspaper_name: str, date: datetime):
     collection = connect_to_mongo()
@@ -194,7 +298,7 @@ def process_and_save_data(foldername: str, filename: str, newspaper_name: str, d
           ocrtext += f.read()
       paragraphs = re.split("\n\n+", ocrtext)
       paragraphs = [p for p in paragraphs if len(p) > 30]
-      locations = find_keyword_locations(ocrtext, ["virus", "influenza", "LSD"])
+      locations = find_keyword_locations(ocrtext, KEYWORDS)
       for keyword_location in locations:
           address, lat, lon = get_coords(keyword_location[2])
           if (keyword_location[2] is None):
