@@ -1,8 +1,8 @@
 import React from 'react'
 
-type Props = {}
+// type Props = {}
 
-const SourcePage = (props: Props) => {
+const SourcePage = () => {
   return (
     <div>SourcePage</div>
   )
