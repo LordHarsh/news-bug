@@ -11,8 +11,8 @@ nltk.download("punkt")
 nltk.download("punkt_tab")
 
 # MongoDB connection
-client = MongoClient('mongodb+srv://harshbanka:bXWEYnySHsIUkF3Y@news-bug.pk49d.mongodb.net/disease-data?retryWrites=true&w=majority&appName=news-bug')
-db = client['articles_db']
+client = MongoClient('mongodb+srv://harshbanka:bXWEYnySHsIUkF3Y@news-bug.pk49d.mongodb.net/disease-data')
+db = client['disease-data']
 sources_collection = db['sources']
 articles_collection = db['articles']
 

@@ -1,12 +1,10 @@
 'use server';
 
-import clientPromise from '@/lib/mongodb';
+import db from '@/lib/mongodb';
 import Category from '@/lib/types/category';
 
 export async function getCategories() {
   try {
-    const client = await clientPromise;
-    const db = client.db('newsdb');
     const categories = db.collection('categories');
     const result = (await categories.find({}).toArray()).map(doc => ({
       id: doc._id.toString(),

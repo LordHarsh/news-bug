@@ -1,5 +1,6 @@
 'use server';
-import clientPromise from '@/lib/mongodb';
+import db from '@/lib/mongodb';
+
 
 export async function createCategory(
   {
@@ -13,8 +14,6 @@ export async function createCategory(
   }
 ) {
   try {
-    const client = await clientPromise;
-    const db = client.db('newsdb');
     const categories = db.collection('categories');
     // Validate the input
     if (!title) {

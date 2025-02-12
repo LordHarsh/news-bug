@@ -1,6 +1,6 @@
 'use server';
 
-import clientPromise from "@/lib/mongodb";
+import db from "@/lib/mongodb";
 import { Source } from "@/lib/types/souces";
 
 export interface Props {
@@ -9,8 +9,6 @@ export interface Props {
 
 export const getSources = async ({ categoryId }: Props) => {
     try {
-        const client = await clientPromise;
-        const db = client.db("newsdb");
         const sources = db.collection("sources");
         const result: Source[] = (await sources.find({ categoryId }).toArray()).map((doc) => ({
             id: doc._id.toString(),

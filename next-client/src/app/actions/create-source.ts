@@ -1,6 +1,6 @@
 'use server';
 
-import clientPromise from "@/lib/mongodb";
+import db from "@/lib/mongodb";
 import { z } from "zod";
 import { validateCronExpression } from '@/lib/cron-validator';
 
@@ -61,8 +61,7 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
     }
 
     try {
-        const client = await clientPromise;
-        const db = client.db("newsdb");
+
         const sources = db.collection("sources");
 
         // Create the initial source document

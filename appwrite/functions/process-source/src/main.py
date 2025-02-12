@@ -14,6 +14,7 @@ def main(context):
         .set_key(context.req.headers["x-appwrite-key"])
     )
     users = Users(client)
+    context.log(context)
 
     try:
         response = users.list()

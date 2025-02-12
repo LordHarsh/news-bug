@@ -23,4 +23,5 @@ if (process.env.NODE_ENV === 'development') {
   clientPromise = client.connect();
 }
 
-export default clientPromise;
+export { clientPromise };
+export default (await clientPromise).db(process.env.MONGODB_DB || "disease-data");

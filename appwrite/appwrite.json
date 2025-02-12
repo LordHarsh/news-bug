@@ -102,9 +102,7 @@
                 "any"
             ],
             "events": [],
-            "scopes": [
-                "users.read"
-            ],
+            "scopes": [],
             "schedule": "",
             "timeout": 15,
             "enabled": true,

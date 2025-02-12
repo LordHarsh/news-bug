@@ -25,14 +25,14 @@ class JobExecution:
 
 
 class SourcePoller:
-    def __init__(self, mongo_uri: str, context, db_name: str = "newsdb"):
+    def __init__(self, mongo_uri: str, context, db_name: str = "disease-data"):
         self.client = AsyncIOMotorClient(mongo_uri)
         self.db = self.client[db_name]
         self.sources = self.db.sources
         self.session = None
         self.context = context
         self.client = None
-        self.process_source_function = None
+        self.functions = None
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -57,7 +57,7 @@ class SourcePoller:
             .set_project(os.environ["APPWRITE_FUNCTION_PROJECT_ID"])
             .set_key(self.context.req.headers["x-appwrite-key"])
         )
-        self.process_source_function = Functions(self.client)
+        self.functions = Functions(self.client)
         return
 
     async def fetch_url(self, url: str, timeout: int) -> str:
@@ -73,7 +73,7 @@ class SourcePoller:
         Returns True if webhook call was successful, False otherwise
         """
         try:
-            self.process_source_function.create_execution(os.environ["APPWRITE_FUNCTION_ID", {
+            self.functions.create_execution(os.environ["APPWRITE_FUNCTION_ID", {
                 "sourceId": str(source["_id"]),
                 "jobId": job_execution.id,
                 "url": source["url"]
