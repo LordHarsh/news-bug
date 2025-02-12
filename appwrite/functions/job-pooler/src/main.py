@@ -1,3 +1,5 @@
+from appwrite.client import Client
+from appwrite.exception import AppwriteException
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -9,6 +11,7 @@ import backoff
 import asyncio
 import os
 
+
 @dataclass
 class JobExecution:
     id: str
@@ -19,6 +22,7 @@ class JobExecution:
     duration: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
 
+
 class SourcePoller:
     def __init__(self, mongo_uri: str, context, db_name: str = "newsdb"):
         self.client = AsyncIOMotorClient(mongo_uri)
@@ -26,6 +30,7 @@ class SourcePoller:
         self.sources = self.db.sources
         self.session = None
         self.context = context
+        self.client = None
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -36,20 +41,41 @@ class SourcePoller:
             await self.session.close()
         self.client.close()
 
-    @backoff.on_exception(
-        backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError), max_tries=5
-    )
     async def fetch_url(self, url: str, timeout: int) -> str:
         async with self.session.get(url, timeout=timeout / 1000) as response:
             response.raise_for_status()
             return await response.text()
 
-    async def do_task(self, source: Dict[str, Any], job_execution: JobExecution) -> bool:
+    @backoff.on_exception(
+        backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError), max_tries=5
+    )
+    async def create_client(self):
+        self.client = (
+            Client()
+            .set_endpoint(os.environ["APPWRITE_FUNCTION_API_ENDPOINT"])
+            .set_project(os.environ["APPWRITE_FUNCTION_PROJECT_ID"])
+            .set_key(self.context.req.headers["x-appwrite-key"])
+        )
+        return
+
+    async def fetch_url(self, url: str, timeout: int) -> str:
+        async with self.session.get(url, timeout=timeout / 1000) as response:
+            response.raise_for_status()
+            return await response.text()
+
+    async def do_task(
+        self, source: Dict[str, Any], job_execution: JobExecution
+    ) -> bool:
         """
         Initiates the task by calling the webhook and updates status to processing
         Returns True if webhook call was successful, False otherwise
         """
         try:
+            self.client.functions.create_execution(os.environ["APPWRITE_FUNCTION_ID", {
+                "sourceId": str(source["_id"]),
+                "jobId": job_execution.id,
+                "url": source["url"]
+            }])
             # webhook_url = source.get("webhookUrl")
             # if not webhook_url:
             #     raise ValueError("No webhook URL configured for source")
@@ -65,11 +91,13 @@ class SourcePoller:
             #     timeout=30
             # ) as response:
             #     response.raise_for_status()
-                
+
             return True
 
         except Exception as e:
-            self.context.error(f"Failed to initiate task for source {source['_id']}: {str(e)}")
+            self.context.error(
+                f"Failed to initiate task for source {source['_id']}: {str(e)}"
+            )
             return False
 
     async def process_source(self, source: Dict[str, Any]):
@@ -84,16 +112,15 @@ class SourcePoller:
                 {"_id": source_id, "status": {"$ne": "running"}}
             )
             if not current_source:
-                self.context.log(f"Source {source_id} is no longer eligible for processing")
+                self.context.log(
+                    f"Source {source_id} is no longer eligible for processing"
+                )
                 return
 
             # Update source status to running with optimistic locking
             result = await self.sources.update_one(
-                {
-                    "_id": source_id,
-                    "status": {"$ne": "running"}
-                },
-                {"$set": {"status": "running", "currentRetry": 0}}
+                {"_id": source_id, "status": {"$ne": "running"}},
+                {"$set": {"status": "running", "currentRetry": 0}},
             )
 
             if result.modified_count == 0:
@@ -102,7 +129,7 @@ class SourcePoller:
 
             # Call do_task to initiate the task
             task_initiated = await self.do_task(source, job_execution)
-            
+
             if not task_initiated:
                 # Handle task initiation failure
                 job_execution.status = "failed"
@@ -191,7 +218,7 @@ class SourcePoller:
     async def poll_once(self):
         try:
             now = datetime.now(timezone.utc)
-            
+
             cursor = self.sources.find(
                 {
                     "isActive": True,
@@ -208,8 +235,8 @@ class SourcePoller:
                     "retryCount": 1,
                     "currentRetry": 1,
                     "lastRunAt": 1,
-                    "webhookUrl": 1  # Added webhookUrl to projection
-                }
+                    "webhookUrl": 1,  # Added webhookUrl to projection
+                },
             )
 
             sources = []
@@ -227,11 +254,15 @@ class SourcePoller:
             self.context.error(f"Error in polling cycle: {str(e)}")
             raise
 
+
 async def main(context):
     try:
-        mongo_uri = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
-        
+        mongo_uri = os.environ.get("MONGODB_URI")
+        if not mongo_uri:
+            raise ValueError("MONGODB_URI environment variable is required")
+
         async with SourcePoller(mongo_uri, context) as poller:
+            await poller.create_client()
             await poller.poll_once()
 
         return context.res.json(

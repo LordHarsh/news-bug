@@ -93,6 +93,25 @@
             "entrypoint": "src/main.py",
             "commands": "pip install -r requirements.txt",
             "path": "functions/job-pooler"
+        },
+        {
+            "$id": "67ac0cb30031712f59db",
+            "name": "process-source",
+            "runtime": "python-ml-3.11",
+            "execute": [
+                "any"
+            ],
+            "events": [],
+            "scopes": [
+                "users.read"
+            ],
+            "schedule": "",
+            "timeout": 15,
+            "enabled": true,
+            "logging": true,
+            "entrypoint": "src/main.py",
+            "commands": "pip install -r requirements.txt",
+            "path": "functions/process-source"
         }
     ]
 }
