@@ -41,7 +41,6 @@ class SourcePoller:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
-        self.client.close()
 
     async def fetch_url(self, url: str, timeout: int) -> str:
         async with self.session.get(url, timeout=timeout / 1000) as response:
