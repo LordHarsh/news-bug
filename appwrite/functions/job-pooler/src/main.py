@@ -6,6 +6,7 @@ from bson import ObjectId
 from appwrite.client import Client
 from appwrite.services.functions import Functions
 import os
+import json
 
 
 @dataclass
@@ -29,9 +30,9 @@ class SourcePoller:
     def __init__(self, mongo_uri: str, context):
         self.client = MongoClient(mongo_uri)
         self.db = self.client["disease-data"]
-        self.sources = self.db.get_collection("Sources")
-        self.categories = self.db.get_collection("Categories")
-        self.job_executions = self.db.get_collection("JobExecutions")
+        self.sources = self.db.get_collection("sources")
+        self.categories = self.db.get_collection("categories")
+        self.job_executions = self.db.get_collection("job-executions")
         self.context = context
 
         # Initialize Appwrite client
@@ -45,8 +46,9 @@ class SourcePoller:
         """Triggers the Appwrite function for processing"""
         try:
             self.functions.create_execution(
-                os.environ["APPWRITE_FUNCTION_ID"],
-                data={"sourceId": source_id, "jobId": job_id, "url": url},
+                os.environ["APPWRITE_PROCESS_SOURCE_FUNCTION_ID"],
+                body=json.dumps({"jobId": job_id}),
+                xasync=True,
             )
             return True
         except Exception as e:
@@ -56,9 +58,10 @@ class SourcePoller:
     def process_source(self, source: Dict[str, Any]):
         source_id = str(source["_id"])
         now = datetime.now(timezone.utc)
+        self.context.log(f"Processing source {source_id}, url: {source['url']}")
 
         # Get associated category data
-        category = self.categories.find_one({"_id": source["categoryId"]})
+        category = self.categories.find_one({"_id": ObjectId(source["categoryId"])})
         if not category:
             self.context.error(f"Category not found for source {source_id}")
             return
@@ -78,19 +81,24 @@ class SourcePoller:
         try:
             # Insert job execution record
             self.job_executions.insert_one(job_execution.__dict__)
-
+            self.context.log(f"Job execution created: {job_execution._id}")
             # Update source status to running
             result = self.sources.update_one(
                 {"_id": source["_id"], "status": {"$ne": "running"}},
-                {"$set": {"status": "running", "lastRunAt": now, "currentRetry": 0}},
+                {"$set": {"status": "running", "lastRunAt": now}},
             )
+            self.context.log(f"Source status updated: {result.modified_count}")
 
             if result.modified_count == 0:
                 return
 
             # Trigger the function asynchronously
             self.trigger_function(source_id, job_execution._id, source["url"])
-
+            self.sources.update_one(
+                {"_id": ObjectId(source_id)},
+                {"$push": {"jobExecutionIds": job_execution._id}},
+            )
+            self.context.log("Function triggered successfully")
         except Exception as e:
             error_msg = f"Error processing source {source_id}: {str(e)}"
             self.context.error(error_msg)
@@ -118,6 +126,7 @@ class SourcePoller:
             now = datetime.now(timezone.utc)
 
             # Find sources that need processing
+            self.context.log("Polling sources...")
             sources = self.sources.find(
                 {
                     "isActive": True,
@@ -125,8 +134,8 @@ class SourcePoller:
                     "cronSchedule": {"$exists": True},
                     "nextRunAt": {"$lte": now},
                 }
-            )
-
+            ).to_list(length=None)
+            self.context.log(f"Found {len(sources)} sources to process")
             for source in sources:
                 self.process_source(source)
 

@@ -11,5 +11,5 @@ export interface Source {
     nextRunAt: string;
     lastError: string | null;
     status: 'idle' | 'running' | 'error';
-    executionHistory: string[];
+    jobExecutionIds: string[];
 }

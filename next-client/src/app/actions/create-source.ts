@@ -59,7 +59,7 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
         const sourceDocument = {
             ...validatedFields.data,
             status: 'idle' as const,
-            executionHistory: [] as Array<string>,
+            jobExecutionIds: [] as Array<string>,
             createdAt: now,
             updatedAt: now,
             lastRunAt: null,
@@ -91,7 +91,7 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
             nextRunAt: source.nextRunAt ? source.nextRunAt.toISOString() : null,
             lastError: source.lastError,
             status: source.status,
-            executionHistory: source.executionHistory,
+            jobExecutionIds: source.jobExecutionIds,
         }));
 
         return {

@@ -23,6 +23,7 @@ import { createSource } from '@/app/actions/create-source';
 import { useSelectedCategoryStore } from '@/stores/useSelectedCategoriesStore';
 import { useSourcesStore } from '@/stores/useAllSources';
 import { Source } from '@/lib/types/souces';
+import { set } from 'zod';
 
 interface CreateSourceDialogProps {
     children: React.ReactNode;
@@ -73,6 +74,7 @@ export function CreateSourceDialog({ children }: Readonly<CreateSourceDialogProp
     useEffect(() => {
         if (state.message) {
             if (state.success) {
+                setSources(state.data);
                 toast({
                     title: "Success",
                     description: state.message

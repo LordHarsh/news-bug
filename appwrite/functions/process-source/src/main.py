@@ -2,6 +2,7 @@ from appwrite.client import Client
 from appwrite.services.users import Users
 from appwrite.exception import AppwriteException
 import os
+import time
 
 # This Appwrite function will be executed every time your function is triggered
 def main(context):
@@ -15,6 +16,7 @@ def main(context):
     )
     users = Users(client)
     context.log(context)
+    time.sleep(180)
 
     try:
         response = users.list()
