@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from pymongo import MongoClient
-from croniter import croniter
 from dataclasses import dataclass
 from bson import ObjectId
 from appwrite.client import Client
@@ -17,11 +16,11 @@ class JobExecution:
     sourceUrl: str
     categoryKeywords: list[str]
     startedAt: str
-    completedAt: Optional[str] = None
     createdAt: str
     updatedAt: str
-    duration: Optional[int] = None
     status: str = "running"
+    completedAt: Optional[str] = None
+    duration: Optional[int] = None
     error: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
@@ -74,7 +73,6 @@ class SourcePoller:
             startedAt=now.isoformat(),
             createdAt=now.isoformat(),
             updatedAt=now.isoformat(),
-            status="running",
         )
 
         try:
