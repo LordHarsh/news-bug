@@ -1,45 +1,98 @@
-from appwrite.client import Client
-from appwrite.exception import AppwriteException
-import os
 import json
 import time
-from .scrape import is_url_processed, mark_url_processed, extract_using_newspaper3k
+
+# from .scrape import is_url_processed, mark_url_processed, extract_using_newspaper3k
 from .mongo import MongoSession
+from typing import Dict, Any
+from .article_processor import ArticleProcessor
+from datetime import datetime
 
 
-# This Appwrite function will be executed every time your function is triggered
+def process_job_execution(context, job_id: str) -> Dict[str, Any]:
+    """Main function to process a job execution"""
+    try:
+        # Initialize database session and article processor
+        db_session = MongoSession(context)
+        processor = ArticleProcessor(db_session, context)
+
+        # Get job execution details
+        job_execution = db_session.get_job_execution(job_id)
+        if not job_execution:
+            raise ValueError(f"Job execution not found: {job_id}")
+
+        # # Update job status to running
+        start_time = datetime.utcnow()
+        processor.update_job_execution(
+            job_id,
+            {"status": "running", "startedAt": start_time.isoformat(), "error": None},
+        )
+        context.log(f"Processing job: {job_id}")
+        # # Process articles with crawling
+        processed_articles = processor.crawl_and_process(
+            job_execution,
+            max_pages=20,  # Configurable
+            max_depth=2,  # Configurable
+            max_workers=1,  # Configurable
+        )
+
+        # # Calculate duration
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
+
+        # # Update job execution with results
+        # result_update = {
+        #     "status": "completed",
+        #     "completedAt": end_time.isoformat(),
+        #     "duration": duration,
+        #     "metadata": {
+        #         "articlesProcessed": len(processed_articles),
+        #         "articleIds": [article["_id"] for article in processed_articles],
+        #         "processingTime": duration,
+        #     },
+        # }
+
+        # processor.update_job_execution(job_id, result_update)
+
+        # return {
+        #     "success": True,
+        #     "message": f"Processed {len(processed_articles)} articles successfully",
+        #     "articleCount": len(processed_articles),
+        #     "articleIds": [article["_id"] for article in processed_articles],
+        # }
+        return {"success": True, "message": "Processed 0 articles successfully"}
+
+    except Exception as e:
+        # Update job execution with error
+        if processor:
+            processor.update_job_execution(
+                job_id,
+                {
+                    "status": "error",
+                    "completedAt": datetime.utcnow().isoformat(),
+                    "error": str(e),
+                    "duration": (datetime.utcnow() - start_time).total_seconds(),
+                },
+            )
+
+        raise
+
+
 def main(context):
-    # You can use the Appwrite SDK to interact with other services
-    # For this example, we're using the Users service
-    client = (
-        Client()
-        .set_endpoint(os.environ["APPWRITE_FUNCTION_API_ENDPOINT"])
-        .set_project(os.environ["APPWRITE_FUNCTION_PROJECT_ID"])
-        .set_key(context.req.headers["x-appwrite-key"])
-    )
     try:
         start_time = time.time()
-        context.log(type(context.req.body))
-        context.log(context.req.body)
         req_json = json.loads(context.req.body)
         job_id = req_json.get("jobId")
-        if not job_id:
-            context.error("Job ID not provided")
 
-        db = MongoSession(context)
-        job = db.get_job_execution(job_id)
-        context.log(str(job))
-        
-        
-        # response = users.list()
-        # Log messages and errors to the Appwrite Console
-        # These logs won't be seen by your end users
-        # context.log("Total users: " + str(response["total"]))
+        if not job_id:
+            raise ValueError("Job ID not provided")
+
+        result = process_job_execution(context, job_id)
+
         end_time = time.time()
         context.log(f"Execution time: {end_time - start_time} seconds")
-    except AppwriteException as err:
-        context.error("Could not list users: " + repr(err))
 
-    return context.res.json(
-        {"success": True, "message": "Polling completed successfully"}
-    )
+        return context.res.json(result)
+
+    except Exception as e:
+        context.error(f"Error processing job: {str(e)}")
+        return context.res.json({"success": False, "message": str(e)}, 500)
