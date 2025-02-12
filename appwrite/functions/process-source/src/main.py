@@ -1,8 +1,11 @@
 from appwrite.client import Client
-from appwrite.services.users import Users
 from appwrite.exception import AppwriteException
 import os
+import json
 import time
+from .scrape import is_url_processed, mark_url_processed, extract_using_newspaper3k
+from .mongo import MongoSession
+
 
 # This Appwrite function will be executed every time your function is triggered
 def main(context):
@@ -14,29 +17,29 @@ def main(context):
         .set_project(os.environ["APPWRITE_FUNCTION_PROJECT_ID"])
         .set_key(context.req.headers["x-appwrite-key"])
     )
-    users = Users(client)
-    context.log(context)
-    time.sleep(180)
-
     try:
-        response = users.list()
+        start_time = time.time()
+        context.log(type(context.req.body))
+        context.log(context.req.body)
+        req_json = json.loads(context.req.body)
+        job_id = req_json.get("jobId")
+        if not job_id:
+            context.error("Job ID not provided")
+
+        db = MongoSession(context)
+        job = db.get_job_execution(job_id)
+        context.log(str(job))
+        
+        
+        # response = users.list()
         # Log messages and errors to the Appwrite Console
         # These logs won't be seen by your end users
-        context.log("Total users: " + str(response["total"]))
+        # context.log("Total users: " + str(response["total"]))
+        end_time = time.time()
+        context.log(f"Execution time: {end_time - start_time} seconds")
     except AppwriteException as err:
         context.error("Could not list users: " + repr(err))
 
-    # The req object contains the request data
-    if context.req.path == "/ping":
-        # Use res object to respond with text(), json(), or binary()
-        # Don't forget to return a response!
-        return context.res.text("Pong")
-
     return context.res.json(
-        {
-            "motto": "Build like a team of hundreds_",
-            "learn": "https://appwrite.io/docs",
-            "connect": "https://appwrite.io/discord",
-            "getInspired": "https://builtwith.appwrite.io",
-        }
+        {"success": True, "message": "Polling completed successfully"}
     )

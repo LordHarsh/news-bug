@@ -80,7 +80,7 @@ class SourcePoller:
 
         try:
             # Insert job execution record
-            self.job_executions.insert_one(job_execution.__dict__)
+            self.job_executions.insert_one({**job_execution.__dict__, "_id": ObjectId(job_execution._id)})
             self.context.log(f"Job execution created: {job_execution._id}")
             # Update source status to running
             result = self.sources.update_one(
