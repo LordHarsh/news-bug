@@ -8,6 +8,7 @@ import uuid
 import aiohttp
 from dataclasses import dataclass
 import backoff
+from appwrite.services.functions import Functions
 import asyncio
 import os
 
@@ -31,6 +32,7 @@ class SourcePoller:
         self.session = None
         self.context = context
         self.client = None
+        self.process_source_function = None
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -56,6 +58,7 @@ class SourcePoller:
             .set_project(os.environ["APPWRITE_FUNCTION_PROJECT_ID"])
             .set_key(self.context.req.headers["x-appwrite-key"])
         )
+        self.process_source_function = Functions(self.client)
         return
 
     async def fetch_url(self, url: str, timeout: int) -> str:
@@ -71,7 +74,7 @@ class SourcePoller:
         Returns True if webhook call was successful, False otherwise
         """
         try:
-            self.client.functions.create_execution(os.environ["APPWRITE_FUNCTION_ID", {
+            self.process_source_function.create_execution(os.environ["APPWRITE_FUNCTION_ID", {
                 "sourceId": str(source["_id"]),
                 "jobId": job_execution.id,
                 "url": source["url"]
