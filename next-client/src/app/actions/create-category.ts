@@ -1,5 +1,6 @@
 'use server';
 import db from '@/lib/mongodb';
+import Category from '@/lib/types/category';
 
 
 export async function createCategory(
@@ -14,7 +15,7 @@ export async function createCategory(
   }
 ) {
   try {
-    const categories = db.collection('categories');
+    const categoriesCollection = db.collection('categories');
     // Validate the input
     if (!title) {
       throw new Error('Title is required');
@@ -27,13 +28,20 @@ export async function createCategory(
       keywords,
       description,
     };
-    const result = await categories.insertOne(category);
+    const result = await categoriesCollection.insertOne(category);
     if (!result.acknowledged) {
       throw new Error('Failed to insert category');
     }
+    const categories: Category[] = (await categoriesCollection.find({}).toArray()).map(doc => ({
+      id: doc._id.toString(),
+      title: doc.title,
+      description: doc.description,
+      keywords: doc.keywords,
+    }));
     return {
       success: true,
-      insertedId: result.insertedId.toString()
+      insertedId: result.insertedId.toString(),
+      data: categories,
     };
   } catch (e: any) {
     console.error(e);

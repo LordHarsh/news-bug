@@ -16,10 +16,12 @@ import { useState } from 'react';
 import { KeywordsTagInput } from './keyword-tag-input';
 import { Input } from '../ui/input';
 import { useToast } from "@/hooks/use-toast"
+import { useCategoriesStore } from '@/stores/useAllCategories';
 
 
 export function CreateCategoryDialog({ children }: Readonly<{ children: React.ReactNode; }>) {
     const { toast } = useToast();
+    const { setCategories } = useCategoriesStore();
     const { title, keywords, description, setTitle, setKeywords, setDescription, reset } = useCategoryFormStore();
     const [isOpen, setIsOpen] = useState(false);
 
@@ -47,12 +49,13 @@ export function CreateCategoryDialog({ children }: Readonly<{ children: React.Re
         try {
             const result = await createCategory({ title, keywords, description });
 
-            if (result.success) {
+            if (result.success && result.data) {
                 toast({
                     title: "Success",
                     description: "Category created successfully!"
                 });
                 reset();
+                setCategories(result.data);
                 setIsOpen(false);
             } else {
                 toast({

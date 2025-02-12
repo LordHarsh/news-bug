@@ -1,275 +1,154 @@
-from appwrite.client import Client
-from appwrite.exception import AppwriteException
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import MongoClient
 from croniter import croniter
-import uuid
-import aiohttp
 from dataclasses import dataclass
-import backoff
+from bson import ObjectId
+from appwrite.client import Client
 from appwrite.services.functions import Functions
-import asyncio
 import os
 
 
 @dataclass
 class JobExecution:
-    id: str
-    startedAt: datetime
-    completedAt: Optional[datetime] = None
+    _id: str
+    sourceId: str
+    categoryId: str
+    sourceUrl: str
+    categoryKeywords: list[str]
+    startedAt: str
+    completedAt: Optional[str] = None
+    createdAt: str
+    updatedAt: str
+    duration: Optional[int] = None
     status: str = "running"
     error: Optional[str] = None
-    duration: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
 class SourcePoller:
-    def __init__(self, mongo_uri: str, context, db_name: str = "disease-data"):
-        self.client = AsyncIOMotorClient(mongo_uri)
-        self.db = self.client[db_name]
-        self.sources = self.db.sources
-        self.session = None
+    def __init__(self, mongo_uri: str, context):
+        self.client = MongoClient(mongo_uri)
+        self.db = self.client["disease-data"]
+        self.sources = self.db.get_collection("Sources")
+        self.categories = self.db.get_collection("Categories")
+        self.job_executions = self.db.get_collection("JobExecutions")
         self.context = context
-        self.client = None
-        self.functions = None
 
-    async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
-        return self
+        # Initialize Appwrite client
+        self.appwrite_client = Client()
+        self.appwrite_client.set_endpoint(os.environ["APPWRITE_FUNCTION_API_ENDPOINT"])
+        self.appwrite_client.set_project(os.environ["APPWRITE_FUNCTION_PROJECT_ID"])
+        self.appwrite_client.set_key(context.req.headers["x-appwrite-key"])
+        self.functions = Functions(self.appwrite_client)
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
-
-    async def fetch_url(self, url: str, timeout: int) -> str:
-        async with self.session.get(url, timeout=timeout / 1000) as response:
-            response.raise_for_status()
-            return await response.text()
-
-    @backoff.on_exception(
-        backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError), max_tries=5
-    )
-    async def create_client(self):
-        self.client = (
-            Client()
-            .set_endpoint(os.environ["APPWRITE_FUNCTION_API_ENDPOINT"])
-            .set_project(os.environ["APPWRITE_FUNCTION_PROJECT_ID"])
-            .set_key(self.context.req.headers["x-appwrite-key"])
-        )
-        self.functions = Functions(self.client)
-        return
-
-    async def fetch_url(self, url: str, timeout: int) -> str:
-        async with self.session.get(url, timeout=timeout / 1000) as response:
-            response.raise_for_status()
-            return await response.text()
-
-    async def do_task(
-        self, source: Dict[str, Any], job_execution: JobExecution
-    ) -> bool:
-        """
-        Initiates the task by calling the webhook and updates status to processing
-        Returns True if webhook call was successful, False otherwise
-        """
+    def trigger_function(self, source_id: str, job_id: str, url: str) -> bool:
+        """Triggers the Appwrite function for processing"""
         try:
-            self.functions.create_execution(os.environ["APPWRITE_FUNCTION_ID", {
-                "sourceId": str(source["_id"]),
-                "jobId": job_execution.id,
-                "url": source["url"]
-            }])
-            # webhook_url = source.get("webhookUrl")
-            # if not webhook_url:
-            #     raise ValueError("No webhook URL configured for source")
-
-            # Call webhook to start the task
-            # async with self.session.post(
-            #     webhook_url,
-            #     json={
-            #         "sourceId": str(source["_id"]),
-            #         "jobId": job_execution.id,
-            #         "url": source["url"]
-            #     },
-            #     timeout=30
-            # ) as response:
-            #     response.raise_for_status()
-
-            return True
-
-        except Exception as e:
-            self.context.error(
-                f"Failed to initiate task for source {source['_id']}: {str(e)}"
+            self.functions.create_execution(
+                os.environ["APPWRITE_FUNCTION_ID"],
+                data={"sourceId": source_id, "jobId": job_id, "url": url},
             )
+            return True
+        except Exception as e:
+            self.context.error(f"Failed to trigger function: {str(e)}")
             return False
 
-    async def process_source(self, source: Dict[str, Any]):
-        source_id = source["_id"]
+    def process_source(self, source: Dict[str, Any]):
+        source_id = str(source["_id"])
+        now = datetime.now(timezone.utc)
+
+        # Get associated category data
+        category = self.categories.find_one({"_id": source["categoryId"]})
+        if not category:
+            self.context.error(f"Category not found for source {source_id}")
+            return
+
+        # Create job execution record
         job_execution = JobExecution(
-            id=str(uuid.uuid4()), startedAt=datetime.now(timezone.utc)
+            _id=str(ObjectId()),
+            sourceId=source_id,
+            categoryId=str(category["_id"]),
+            sourceUrl=source["url"],
+            categoryKeywords=category.get("keywords", []),
+            startedAt=now.isoformat(),
+            createdAt=now.isoformat(),
+            updatedAt=now.isoformat(),
+            status="running",
         )
 
         try:
-            # Check if source is still eligible for processing
-            current_source = await self.sources.find_one(
-                {"_id": source_id, "status": {"$ne": "running"}}
-            )
-            if not current_source:
-                self.context.log(
-                    f"Source {source_id} is no longer eligible for processing"
-                )
-                return
+            # Insert job execution record
+            self.job_executions.insert_one(job_execution.__dict__)
 
-            # Update source status to running with optimistic locking
-            result = await self.sources.update_one(
-                {"_id": source_id, "status": {"$ne": "running"}},
-                {"$set": {"status": "running", "currentRetry": 0}},
+            # Update source status to running
+            result = self.sources.update_one(
+                {"_id": source["_id"], "status": {"$ne": "running"}},
+                {"$set": {"status": "running", "lastRunAt": now, "currentRetry": 0}},
             )
 
             if result.modified_count == 0:
-                self.context.log(f"Source {source_id} was already being processed")
                 return
 
-            # Call do_task to initiate the task
-            task_initiated = await self.do_task(source, job_execution)
-
-            if not task_initiated:
-                # Handle task initiation failure
-                job_execution.status = "failed"
-                job_execution.completedAt = datetime.now(timezone.utc)
-                job_execution.error = "Failed to initiate task"
-                status = "failed"
-                next_run = croniter(
-                    source["cronSchedule"], datetime.now(timezone.utc)
-                ).get_next(datetime)
-            else:
-                # Task successfully initiated
-                job_execution.status = "processing"
-                job_execution.completedAt = datetime.now(timezone.utc)
-                status = "processing"
-                # Next run will be determined by webhook callback
-                next_run = None
-
-            job_execution.duration = int(
-                (job_execution.completedAt - job_execution.startedAt).total_seconds()
-                * 1000
-            )
-
-            # Update source with current status
-            await self.sources.update_one(
-                {"_id": source_id},
-                {
-                    "$set": {
-                        "status": status,
-                        "lastRunAt": job_execution.completedAt,
-                        "nextRunAt": next_run,
-                        "lastError": None if task_initiated else job_execution.error,
-                    },
-                    "$push": {
-                        "executionHistory": {
-                            "$each": [job_execution.__dict__],
-                            "$slice": -100,
-                        }
-                    },
-                },
-            )
-            self.context.log(f"Source {source_id} status updated to {status}")
+            # Trigger the function asynchronously
+            self.trigger_function(source_id, job_execution._id, source["url"])
 
         except Exception as e:
-            job_execution.status = "failed"
-            job_execution.completedAt = datetime.now(timezone.utc)
-            job_execution.error = str(e)
-            job_execution.duration = int(
-                (job_execution.completedAt - job_execution.startedAt).total_seconds()
-                * 1000
-            )
+            error_msg = f"Error processing source {source_id}: {str(e)}"
+            self.context.error(error_msg)
 
-            current_retry = source.get("currentRetry", 0)
-            max_retries = source.get("retryCount", 3)
-
-            if current_retry < max_retries:
-                next_run = datetime.now(timezone.utc)
-                status = "idle"
-                current_retry += 1
-            else:
-                next_run = croniter(
-                    source["cronSchedule"], datetime.now(timezone.utc)
-                ).get_next(datetime)
-                status = "failed"
-                current_retry = 0
-
-            await self.sources.update_one(
-                {"_id": source_id},
+            # Update job execution status to error
+            self.job_executions.update_one(
+                {"_id": ObjectId(job_execution._id)},
                 {
                     "$set": {
-                        "status": status,
-                        "lastRunAt": job_execution.completedAt,
-                        "nextRunAt": next_run,
-                        "lastError": job_execution.error,
-                        "currentRetry": current_retry,
-                    },
-                    "$push": {
-                        "executionHistory": {
-                            "$each": [job_execution.__dict__],
-                            "$slice": -100,
-                        }
-                    },
+                        "status": "error",
+                        "error": error_msg,
+                        "updatedAt": datetime.now(timezone.utc).isoformat(),
+                    }
                 },
             )
-            self.context.error(f"Error processing source {source_id}: {str(e)}")
 
-    async def poll_once(self):
+            # Update source status
+            self.sources.update_one(
+                {"_id": source["_id"]},
+                {"$set": {"status": "error", "lastError": error_msg}},
+            )
+
+    def poll(self):
         try:
             now = datetime.now(timezone.utc)
 
-            cursor = self.sources.find(
+            # Find sources that need processing
+            sources = self.sources.find(
                 {
                     "isActive": True,
-                    "status": {"$ne": "running"},
-                    "$or": [
-                        {"nextRunAt": {"$lte": now}},
-                        {"nextRunAt": {"$exists": False}},
-                    ],
-                },
-                {
-                    "url": 1,
-                    "cronSchedule": 1,
-                    "timeout": 1,
-                    "retryCount": 1,
-                    "currentRetry": 1,
-                    "lastRunAt": 1,
-                    "webhookUrl": 1,  # Added webhookUrl to projection
-                },
+                    "status": {"$in": ["idle", "error"]},
+                    "cronSchedule": {"$exists": True},
+                    "nextRunAt": {"$lte": now},
+                }
             )
 
-            sources = []
-            async for source in cursor:
-                sources.append(source)
+            for source in sources:
+                self.process_source(source)
 
-            if not sources:
-                self.context.log("No sources due for processing")
-                return
-
-            self.context.log(f"Processing {len(sources)} sources")
-            await asyncio.gather(*[self.process_source(source) for source in sources])
+            return {"success": True, "message": "Polling completed successfully"}
 
         except Exception as e:
-            self.context.error(f"Error in polling cycle: {str(e)}")
-            raise
+            self.context.error(f"Polling error: {str(e)}")
+            return {"success": False, "error": str(e)}
 
 
-async def main(context):
+def main(context):
     try:
         mongo_uri = os.environ.get("MONGODB_URI")
         if not mongo_uri:
             raise ValueError("MONGODB_URI environment variable is required")
 
-        async with SourcePoller(mongo_uri, context) as poller:
-            await poller.create_client()
-            await poller.poll_once()
+        poller = SourcePoller(mongo_uri, context)
+        result = poller.poll()
 
-        return context.res.json(
-            {"success": True, "message": "Polling cycle completed successfully"}
-        )
+        return context.res.json(result)
 
     except Exception as e:
         context.error(f"Function error: {str(e)}")

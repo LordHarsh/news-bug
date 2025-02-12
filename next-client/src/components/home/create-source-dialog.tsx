@@ -21,6 +21,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { createSource } from '@/app/actions/create-source';
 import { useSelectedCategoryStore } from '@/stores/useSelectedCategoriesStore';
+import { useSourcesStore } from '@/stores/useAllSources';
+import { Source } from '@/lib/types/souces';
 
 interface CreateSourceDialogProps {
     children: React.ReactNode;
@@ -29,6 +31,7 @@ interface CreateSourceDialogProps {
 interface FormState {
     message: string;
     success: boolean;
+    data: Source[];
     errors: {
         title?: string[];
         url?: string[];
@@ -39,6 +42,7 @@ interface FormState {
 const initialState: FormState = {
     message: '',
     success: false,
+    data: [],
     errors: {}
 };
 
@@ -62,6 +66,7 @@ export function CreateSourceDialog({ children }: Readonly<CreateSourceDialogProp
     const [isActive, setIsActive] = useState(true);
     const [selectedFrequency, setSelectedFrequency] = useState(frequencies[4].value); // Default to hourly
     const { selectedCategory } = useSelectedCategoryStore();
+    const { setSources } = useSourcesStore();
 
     const [state, formAction] = useActionState<FormState, FormData>(createSource, initialState);
 

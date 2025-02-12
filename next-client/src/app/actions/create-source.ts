@@ -3,19 +3,7 @@
 import db from "@/lib/mongodb";
 import { z } from "zod";
 import { validateCronExpression } from '@/lib/cron-validator';
-
-// Job Execution Schema
-const jobExecutionSchema = z.object({
-    id: z.string(),
-    startedAt: z.date(),
-    completedAt: z.date().optional(),
-    status: z.enum(['running', 'failed', 'completed']),
-    error: z.string().optional(),
-    duration: z.number().optional(),
-    metadata: z.record(z.any()).optional()
-})
-
-type JobExecutionSchema = z.infer<typeof jobExecutionSchema>;
+import { Source } from "@/lib/types/souces";
 
 // Source Schema
 const sourceSchema = z.object({
@@ -32,6 +20,7 @@ const sourceSchema = z.object({
 type FormState = {
     message: string;
     success: boolean;
+    data: Source[];
     errors: {
         title?: string[];
         url?: string[];
@@ -52,45 +41,63 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
         isActive: formData.get('isActive') === 'true',
     });
 
+
     if (!validatedFields.success) {
         return {
             message: "Validation failed",
             success: false,
+            data: [],
             errors: validatedFields.error.flatten().fieldErrors
         };
     }
 
     try {
-
-        const sources = db.collection("sources");
+        const sourcesCollection = db.collection("sources");
 
         // Create the initial source document
         const now = new Date();
         const sourceDocument = {
             ...validatedFields.data,
             status: 'idle' as const,
-            executionHistory: [] as Array<JobExecutionSchema>,
+            executionHistory: [] as Array<string>,
             createdAt: now,
             updatedAt: now,
             lastRunAt: null,
-            nextRunAt: null,
+            nextRunAt: now,
             lastError: null,
-            currentRetry: 0,
         };
 
-        const result = await sources.insertOne(sourceDocument);
+        const result = await sourcesCollection.insertOne(sourceDocument);
 
         if (!result.acknowledged) {
             return {
                 message: "Failed to insert source",
                 success: false,
+                data: [],
                 errors: {}
             };
         }
+        const sources: Source[] = (await sourcesCollection.find({ categoryId: validatedFields.data.categoryId }).toArray()).map((source) => ({
+            ...source,
+            _id: source._id.toString(),
+            title: source.title,
+            url: source.url,
+            categoryId: source.categoryId,
+            cronSchedule: source.cronSchedule,
+            isActive: source.isActive,
+            createdAt: source.createdAt.toISOString(),
+            updatedAt: source.updatedAt.toISOString(),
+            lastRunAt: source.lastRunAt ? source.lastRunAt.toISOString() : null,
+            nextRunAt: source.nextRunAt ? source.nextRunAt.toISOString() : null,
+            lastError: source.lastError,
+            status: source.status,
+            executionHistory: source.executionHistory,
+        }));
 
         return {
             message: "Source created successfully!",
             success: true,
+            data: sources,
             errors: {}
         };
     } catch (e: any) {
@@ -98,6 +105,7 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
         return {
             message: e.message || "Error creating source",
             success: false,
+            data: [],
             errors: {}
         };
     }
