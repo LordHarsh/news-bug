@@ -7,6 +7,8 @@ from bson import ObjectId
 class MongoSession:
     def __init__(self, context=None):
         uri = os.environ.get("MONGODB_URI")
+        if not uri:
+            raise ValueError("MONGODB_URI environment variable is not set")
         self.client = pymongo.MongoClient(uri)
         self.db = self.client["disease-data"]
         self.categories_collection = self.db.get_collection("categories")
@@ -34,3 +36,7 @@ class MongoSession:
             self.articles_collection.find_one({"url": url, "categoryId": category_id})
             is not None
         )
+
+    def get_cron_schedule_from_sourceId(self, source_id):
+        source = self.sources_collection.find_one({"_id": ObjectId(source_id)})
+        return source["cronSchedule"]

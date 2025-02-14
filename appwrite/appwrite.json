@@ -102,14 +102,17 @@
                 "any"
             ],
             "events": [],
-            "scopes": [],
+            "scopes": [
+                "execution.write"
+            ],
             "schedule": "",
-            "timeout": 15,
+            "timeout": 900,
             "enabled": true,
             "logging": true,
             "entrypoint": "src/main.py",
             "commands": "pip install -r requirements.txt",
-            "path": "functions/process-source"
+            "path": "functions/process-source",
+            "specification": "s-0.5vcpu-512mb"
         }
     ]
 }
