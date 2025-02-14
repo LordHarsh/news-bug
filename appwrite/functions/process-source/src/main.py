@@ -197,12 +197,14 @@ class CrawlerSession:
         visited = set(progress.get("visited", []))
         to_visit = progress.get("to_visit", [(job_data["sourceUrl"], 0)])
         processed_urls = []
+        total_processed = progress.get("total_processed", 0)
+        remaining_pages = max_pages - total_processed
         unique_processed_count = 0  # Counter for new articles only
 
         domain = urlparse(job_data["sourceUrl"]).netloc
 
         try:
-            while to_visit and unique_processed_count < max_pages:
+            while to_visit and unique_processed_count < remaining_pages:
                 if (datetime.utcnow() - start_time).total_seconds() > time_limit:
                     self.log("Time limit reached, saving progress")
                     break
@@ -229,14 +231,16 @@ class CrawlerSession:
                             for link in new_links - visited:
                                 to_visit.append((link, depth + 1))
 
+            new_total_processed = total_processed + len(processed_urls)
+
             # Update progress data
             execution_progress = {
                 "visited": list(visited),
                 "to_visit": to_visit,
-                "total_processed": metadata["crawl_progress"]["total_processed"]
-                + len(processed_urls),
-                "is_completed": len(to_visit) == 0
-                or unique_processed_count >= max_pages,
+                "total_processed": new_total_processed,
+                "is_completed": len(to_visit) == 0 or new_total_processed >= max_pages,
+                "max_pages": max_pages,  # Store the limit for reference
+                "max_depth": max_depth,  # Store the depth limit for reference
             }
 
             # [Rest of the code remains the same...]
@@ -264,11 +268,14 @@ class CrawlerSession:
                     }
                 )
                 base = datetime.now()
+                sourceId = job_data.get("sourceId", None)
+                self.log(f"Updating nextRunAt for sourceId: {sourceId}")
                 cron_schedule = self.db.get_cron_schedule_from_sourceId(
-                    job_data.get("sourceId", None)
+                    sourceId
                 )
-                cron = croniter(cron_schedule, base)
+                cron = croniter.croniter(cron_schedule, base)
                 next_run_at = cron.get_next(datetime)
+                self.log(f"Next run at: {next_run_at}")
                 self.update_source_status(
                     job_data.get("sourceId"),
                     {
@@ -276,6 +283,7 @@ class CrawlerSession:
                         "updatedAt": datetime.utcnow().isoformat(),
                     },
                 )
+                self.log("Processing completed")
             else:
                 self.trigger_function(job_id)
 
@@ -326,8 +334,8 @@ def main(context):
         result = crawler.process_with_timeout(
             job_id=job_id,
             max_depth=request_data.get("maxDepth", 2),
-            max_pages=request_data.get("maxPages", 20),
-            time_limit=request_data.get("timeLimit", 30),
+            max_pages=request_data.get("maxPages", 5),
+            time_limit=request_data.get("timeLimit", 600),
         )
 
         context.log(f"Execution time: {time.time() - start_time} seconds")
