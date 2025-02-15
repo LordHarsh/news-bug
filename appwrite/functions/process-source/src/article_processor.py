@@ -1,256 +1,243 @@
-from newspaper import Article
-from datetime import datetime
-import nltk
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-from typing import Optional, Dict, Any, Set, List, Tuple
-import time
-from bson import ObjectId
+import google.generativeai as genai
 import json
+from typing import List, Dict, Optional
+from pydantic import BaseModel
+from concurrent.futures import ThreadPoolExecutor
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class DiseaseAnalysis(BaseModel):
+    keyword: str
+    location: str
+    case_count: int
+
+
+class ArticleAnalysisResult(BaseModel):
+    is_valid_article: bool
+    data: list[DiseaseAnalysis]
+
+
+class ArticleRequest(BaseModel):
+    article_id: str
+    content: str
+
+
+class ArticleResponse(BaseModel):
+    article_id: str
+    is_valid_article: bool
+    data: list[DiseaseAnalysis]
+
+
+class BatchResponseSchema(BaseModel):
+    results: List[ArticleResponse]
 
 
 class ArticleProcessor:
-    def __init__(self, db_session, context=None):
-        self.db = db_session
-        self.context = context
+    def __init__(
+        self, api_key: str, model_name: str = "gemini-2.0-flash", batch_size: int = 10
+    ):
+        """
+        Initialize the ArticleProcessor with API credentials and configuration.
 
-        # Ensure NLTK data is downloaded
-        try:
-            nltk.download("punkt", quiet=True)
-            nltk.download("punkt_tab", quiet=True)
-        except Exception as e:
-            self.context.log(f"Error downloading NLTK data: {str(e)}")
-            raise
+        Args:
+            api_key (str): Gemini API key
+            model_name (str): Name of the Gemini model to use
+            batch_size (int): Maximum number of articles to process in a single API call
+        """
+        self.api_key = api_key
+        self.model_name = model_name
+        self.batch_size = batch_size
+        self.keywords: List[str] = []
 
-    def log(self, message: str, level: str = "INFO", extra: Dict = None) -> None:
-        """Enhanced logging method with support for levels and additional context"""
-        timestamp = datetime.utcnow().isoformat()
-        log_entry = {
-            "timestamp": timestamp,
-            "level": level,
-            "message": message,
-        }
-
-        if self.context:
-            self.context.log(str(log_entry))
-        else:
-            print(json.dumps(log_entry))
-
-    def is_article_exists(self, url: str) -> bool:
-        """Check if article already exists in the articles collection"""
-        self.log("Checking article existence", extra={"url": url})
-        exists = self.db.articles_collection.find_one({"url": url}) is not None
-        self.log(
-            f"Article existence check result: {'exists' if exists else 'not found'}",
-            extra={"url": url, "exists": exists},
-        )
-        return exists
-
-    def update_job_execution(self, job_id: str, updates: Dict[str, Any]) -> None:
-        """Update job execution status and metadata"""
-        self.log("Updating job execution", extra={"job_id": job_id, "updates": updates})
-
-        try:
-            self.db.job_executions_collection.update_one(
-                {"_id": ObjectId(job_id)},
-                {"$set": {**updates, "updatedAt": datetime.utcnow().isoformat()}},
-            )
-            self.log("Job execution updated successfully", extra={"job_id": job_id})
-
-        except Exception as e:
-            self.log(
-                "Error updating job execution",
-                level="ERROR",
-                extra={
-                    "job_id": job_id,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                },
-            )
-            raise
-
-    def get_links(self, url: str, domain: str) -> Set[str]:
-        """Extract all links from the given URL that belong to the same domain"""
-        self.log("Starting link extraction", extra={"url": url, "domain": domain})
-
-        try:
-            self.log("Sending HTTP request", extra={"url": url})
-            response = requests.get(url)
-            response.raise_for_status()
-
-            self.log("Parsing HTML content", extra={"url": url})
-            soup = BeautifulSoup(response.text, "html.parser")
-            links = set()
-
-            self.log("Extracting links from HTML", extra={"url": url})
-            for a_tag in soup.find_all("a", href=True):
-                link = urljoin(url, a_tag["href"])
-                if domain in link and not self.is_article_exists(link):
-                    links.add(link)
-
-            self.log(
-                f"Link extraction completed",
-                extra={"url": url, "total_links_found": len(links), "domain": domain},
-            )
-            return links
-
-        except Exception as e:
-            self.log(
-                f"Error fetching links",
-                level="ERROR",
-                extra={"url": url, "error": str(e), "error_type": type(e).__name__},
-            )
-            return set()
-
-    def process_single_article(
-        self, url: str, job_execution: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """Process a single article URL"""
-        self.log("Starting article processing", extra={"url": url})
-
-        try:
-            if self.is_article_exists(url):
-                self.log("Skipping existing article", extra={"url": url})
-                return None
-
-            self.log("Initializing Article object", extra={"url": url})
-            article = Article(url, language="en")
-
-            self.log("Downloading article content", extra={"url": url})
-            article.download()
-
-            self.log("Parsing article content", extra={"url": url})
-            article.parse()
-
-            self.log("Performing NLP analysis", extra={"url": url})
-            article.nlp()
-
-            self.log("Preparing article data", extra={"url": url})
-            article_data = {
-                "title": article.title,
-                "sourceId": job_execution["sourceId"],
-                "categoryId": job_execution["categoryId"],
-                "url": url,
-                "publishDate": (
-                    article.publish_date.isoformat() if article.publish_date else None
-                ),
-                "createdAt": datetime.utcnow().isoformat(),
-                "updatedAt": datetime.utcnow().isoformat(),
-                "content": article.text,
-                "keywords": article.keywords,
-                "summary": article.summary,
-                "metadata": {
-                    "authors": article.authors,
-                    "topImage": article.top_image,
-                    "images": list(article.images),
-                    "categoryKeywords": job_execution["categoryKeywords"],
-                    "matchedKeywords": [
-                        keyword
-                        for keyword in job_execution["categoryKeywords"]
-                        if keyword.lower() in article.text.lower()
-                    ],
-                },
-            }
-
-            self.log(
-                "Inserting article into database",
-                extra={
-                    "url": url,
-                    "title": article.title,
-                    "num_keywords": len(article.keywords),
-                    "content_length": len(article.text),
-                },
-            )
-
-            result = self.db.articles_collection.insert_one(article_data)
-            article_data["_id"] = str(result.inserted_id)
-
-            self.log(
-                "Article processing completed successfully",
-                extra={
-                    "url": url,
-                    "article_id": str(result.inserted_id),
-                    "title": article.title,
-                },
-            )
-            return article_data
-
-        except Exception as e:
-            self.log(
-                "Error processing article",
-                level="ERROR",
-                extra={
-                    "url": url,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "stack_trace": getattr(e, "__traceback__", None).__str__(),
-                },
-            )
-            return None
-
-    def crawl_and_process_with_timeout(
-        self,
-        job_execution: Dict[str, Any],
-        max_pages: int = 20,
-        max_depth: int = 2,
-        time_limit: int = 600,  # 10 minutes in seconds
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """Crawl and process articles with a time limit, saving progress for next execution"""
-        start_time = time.time()
-
-        # Load progress from previous execution if exists
-        self.context.log(f"{str(job_execution)}")
-        progress = job_execution.get("metadata", {}).get("crawl_progress", {})
-        self.context.log(f"Loaded progress: {str(progress)}")
-        visited = set(progress.get("visited", []))
-        to_visit = progress.get("to_visit", [(job_execution["sourceUrl"], 0)])
-        processed_articles = []
-
-        parsed_url = urlparse(job_execution["sourceUrl"])
-        domain = parsed_url.netloc
-
-        self.log(
-            "Starting time-limited crawl process",
-            extra={
-                "time_limit": time_limit,
-                "visited_count": len(visited),
-                "queue_size": len(to_visit),
-            },
+        # Configure Gemini with response schema
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel(
+            model_name,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=list[ArticleResponse],
+            ),
         )
 
-        while to_visit and len(processed_articles) < max_pages:
-            # Check time limit
-            if time.time() - start_time > time_limit:
-                self.log("Time limit reached, preparing for next execution")
-                break
+    def set_keywords(self, keywords: List[str]) -> None:
+        """Set the disease keywords to look for in articles."""
+        self.keywords = keywords
 
-            url, depth = to_visit.pop(0)
+    def _create_batch_prompt(self, articles: List[ArticleRequest]) -> str:
+        """
+        Create a prompt for batch processing multiple articles.
 
-            if url not in visited and (
-                not self.is_article_exists(url) or url == job_execution["sourceUrl"]
-            ):
-                visited.add(url)
-                self.context.log(f"Processing URL: {url}")
-                article_data = self.process_single_article(url, job_execution)
-                self.context.log(f"Processed URL: {url}")
-                if article_data:
-                    processed_articles.append(article_data)
+        Args:
+            articles (List[ArticleRequest]): List of articles to analyze
 
-                    if depth < max_depth:
-                        new_links = self.get_links(url, domain)
-                        for link in new_links:
-                            if link not in visited:
-                                to_visit.append((link, depth + 1))
+        Returns:
+            str: Formatted prompt for Gemini
+        """
+        keyword_string = ", ".join(self.keywords)
+        articles_text = "\n\n".join(
+            [
+                f"Article ID: {article.article_id}\n{article.content}"
+                for article in articles
+            ]
+        )
 
-        # Prepare progress data for next execution
-        execution_progress = {
-            "visited": list(visited),
-            "to_visit": to_visit,
-            "total_processed": progress.get("total_processed", 0)
-            + len(processed_articles),
-            "last_execution_time": datetime.utcnow().isoformat(),
-            "is_completed": len(to_visit) == 0 or len(processed_articles) >= max_pages,
-        }
+        return f"""
+Analyze the following news articles to detect if they report new cases of diseases from this list: {keyword_string}.
 
-        return processed_articles, execution_progress
+Articles:
+{articles_text}
+
+Notes:
+- Include an entry for each article ID
+- Set is_valid_article to false if the article doesn't mention disease outbreaks
+- For case_count: use explicit numbers when stated, assume 1 for mentioned cases without numbers
+- Only include diseases in data array if they are mentioned as active cases/outbreaks
+- Return an empty data array if no relevant disease outbreaks are mentioned
+
+Return the results as a JSON object with a 'results' array containing the analysis for each article.
+"""
+
+    # For each article, provide an analysis in the following format:
+    # {{
+    #     "results": [
+    #         {{
+    #             "is_valid_article": true/false,
+    #             "data": [
+    #                 {{
+    #                     "keyword": "disease name from list",
+    #                     "location": "location of outbreak",
+    #                     "case_count": number of cases (integer)
+    #                 }}
+    #             ]
+    #         }}
+    #     ]
+    # }}
+    def _validate_gemini_response(
+        self, response_text: str, batch: list[ArticleRequest]
+    ) -> List[ArticleResponse]:
+        """
+        Validate and parse the Gemini API response.
+
+        Args:
+            response_text (str): Raw response from Gemini
+
+        Returns:
+            List[ArticleResponse]: Validated and parsed response
+        """
+        try:
+            print(response_text)
+            parsed_response = json.loads(response_text)
+
+            # Validate against BatchResponseSchema
+            validated_response = [
+                ArticleAnalysisResult(**item) for item in parsed_response
+            ]
+            consoludated_response = []
+            for i, j in zip(validated_response, batch):
+                consoludated_response.append(
+                    ArticleResponse(
+                        article_id=j.article_id,
+                        is_valid_article=i.is_valid_article,
+                        data=i.data,
+                    )
+                )
+            return validated_response
+
+        except Exception as e:
+            logger.error(f"Error validating Gemini response: {e}")
+            return []
+
+    def process_articles(self, articles: List[ArticleRequest]) -> List[ArticleResponse]:
+        """
+        Process multiple articles in batches.
+
+        Args:
+            articles (List[ArticleRequest]): List of articles to process
+
+        Returns:
+            List[ArticleResponse]: Analysis results for all articles
+        """
+        if not self.keywords:
+            raise ValueError("Keywords not set. Call set_keywords() first.")
+
+        results = []
+        failed_articles = []
+        for i in range(0, len(articles), self.batch_size):
+            batch = articles[i : i + self.batch_size]
+
+            try:
+                prompt = self._create_batch_prompt(batch)
+                print(prompt)
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json",
+                        response_schema=list[ArticleAnalysisResult],
+                    ),
+                )
+
+                batch_results = self._validate_gemini_response(response.text, batch)
+                results.extend(batch_results)
+
+                logger.info(f"Processed batch of {len(batch)} articles successfully")
+
+            except Exception as e:
+                logger.error(f"Error processing batch: {e}")
+                failed_articles.extend(batch)
+                # Add empty results for failed batch
+                for article in batch:
+                    results.append(
+                        ArticleResponse(
+                            article_id=article.article_id,
+                            analysis=ArticleAnalysisResult(
+                                is_valid_article=False, data=[]
+                            ),
+                        )
+                    )
+
+        return {"results": results, "failed_articles": failed_articles}
+
+
+def main():
+    """Example usage of the ArticleProcessor"""
+    api_key = "AIzaSyDUkgnO6nZb7icJKsOdpecdPNErwcol8XY"
+    processor = ArticleProcessor(api_key)
+
+    # Set disease keywords
+    processor.set_keywords(["Measles", "Flu", "Mumps", "Chickenpox"])
+
+    # Example articles
+    articles = [
+        ArticleRequest(
+            article_id="article1",
+            content="""
+            Reports from County Health Services indicate a confirmed case of Measles in Springfield.
+            The patient, a 34-year-old adult, is currently isolated at home and recovering.
+            Health officials are tracing contacts to prevent further spread.
+            """,
+        ),
+        ArticleRequest(
+            article_id="article2",
+            content="""
+            Three suspected cases of Mumps at a local high school, pending lab confirmation.
+            Health officials are monitoring the situation closely.
+            """,
+        ),
+    ]
+
+    # Process articles
+    response = processor.process_articles(articles)
+    
+    results = response["results"]
+    failed_articles = response["failed_articles"]
+
+    # Print results
+    print(json.dumps([result.model_dump() for result in results], indent=2))
+    print(f"Failed to process {len(failed_articles)} articles")
+
+if __name__ == "__main__":
+    main()
