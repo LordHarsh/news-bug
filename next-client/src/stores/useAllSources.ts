@@ -5,8 +5,8 @@ import { Source } from "@/lib/types/souces";
 interface SourcesState {
     sources: Source[];
     addSource: (source: Source) => void;
-    removeSource: (id: string) => void;
-    updateSource: (id: string, updates: Partial<Source>) => void;
+    removeSource: (_id: string) => void;
+    updateSource: (_id: string, updates: Partial<Source>) => void;
     setSources: (sources: Source[]) => void;
     resetSources: () => void;
 }
@@ -19,14 +19,14 @@ export const useSourcesStore = create<SourcesState>()(
                 set((state) => ({
                     sources: [...state.sources, source]
                 })),
-            removeSource: (id) =>
+            removeSource: (_id) =>
                 set((state) => ({
-                    sources: state.sources.filter((src) => src.id !== id)
+                    sources: state.sources.filter((src) => src._id !== _id)
                 })),
-            updateSource: (id, updates) =>
+            updateSource: (_id, updates) =>
                 set((state) => ({
                     sources: state.sources.map((src) =>
-                        src.id === id ? { ...src, ...updates } : src
+                        src._id === _id ? { ...src, ...updates } : src
                     )
                 }),
                 ),

@@ -1,160 +1,53 @@
 import json
 import time
 from datetime import datetime
-from typing import Dict, Any, Set, List, Tuple, Optional
-from newspaper import Article
-import nltk
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+from typing import Dict, Any
+from urllib.parse import urlparse
 from bson import ObjectId
-from .mongo import MongoSession
-from appwrite.client import Client
-from appwrite.services.functions import Functions
 import croniter
 import os
 
-nltk.data.path.append("/tmp/nltk_data")
-nltk.download("punkt", quiet=True)
-nltk.download("punkt_tab", quiet=True)
+# Modules
+from .appwrite import AppwriteClient
+from .logger import Logger
+from .article_extractor import ArticleExtractor
+from .link_extractor import LinkExtractor
+from .mongo import MongoSession
+from .article_processor import ArticleProcessor, ArticleRequest
 
 
-class CrawlerSession:
-    def __init__(self, mongo_client, context):
-        self.db: MongoSession = mongo_client
+class Crawler:
+    def __init__(
+        self,
+        mongo_client: MongoSession,
+        context,
+        appwrite_client: AppwriteClient,
+        article_extractor: ArticleExtractor,
+        link_extractor: LinkExtractor,
+        logger: Logger,
+    ):
+        self.db = mongo_client
         self.context = context
-        self.appwrite_client = Client()
-        self.appwrite_client.set_endpoint(os.environ["APPWRITE_FUNCTION_API_ENDPOINT"])
-        self.appwrite_client.set_project(os.environ["APPWRITE_FUNCTION_PROJECT_ID"])
-        self.appwrite_client.set_key(context.req.headers["x-appwrite-key"])
-        self.functions = Functions(self.appwrite_client)
+        self.appwrite_client = appwrite_client
+        self.article_extractor = article_extractor
+        self.link_extractor = link_extractor
+        self.log = logger.info
+        self.error = logger.error
 
-    def trigger_function(self, job_id: str) -> bool:
-        """Triggers the Appwrite function for processing"""
-        try:
-            function_id = os.environ.get("APPWRITE_FUNCTION_ID")
-            if not function_id:
-                raise ValueError("APPWRITE_FUNCTION_ID environment variable is not set")
-            self.functions.create_execution(
-                function_id,
-                body=json.dumps({"jobId": job_id}),
-                xasync=True,
-            )
-            self.context.log("Function triggered successfully")
-            return True
-        except Exception as e:
-            self.context.error(f"Failed to trigger function: {str(e)}")
-            return False
+        self.max_depth = 2
+        self.max_pages = 5
+        self.time_limit = 600
+
+        self.api_key = os.environ.get("GEMINI_API_KEY")
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY environment variable is not set")
+        self.article_processor = ArticleProcessor(self.api_key)
 
     def is_article_exists(self, url: str, category_id: str) -> bool:
         """Check if article with same URL and categoryId exists"""
-        return (
-            self.db.articles_collection.find_one(
-                {"url": url, "categoryId": category_id}
-            )
-            is not None
+        return self.db.articles_collection.find_one(
+            {"url": url, "categoryId": category_id}
         )
-
-    def log(self, message: str, level: str = "INFO") -> None:
-        """Unified logging method"""
-        log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "level": level,
-            "message": message,
-        }
-        self.context.log(json.dumps(log_entry))
-
-    def update_job_status(self, job_id: str, updates: Dict[str, Any]) -> None:
-        """Update job status in MongoDB"""
-        try:
-            self.db.job_executions_collection.update_one(
-                {"_id": ObjectId(job_id)},
-                {"$set": {**updates, "updatedAt": datetime.utcnow().isoformat()}},
-            )
-        except Exception as e:
-            self.log(f"Failed to update job status: {str(e)}", "ERROR")
-            raise
-
-    def update_source_status(self, source_id: str, updates: Dict[str, Any]) -> None:
-        """Update source status in MongoDB"""
-        try:
-            self.db.sources_collection.update_one(
-                {"_id": ObjectId(source_id)},
-                {"$set": {**updates, "updatedAt": datetime.utcnow().isoformat()}},
-            )
-        except Exception as e:
-            self.log(f"Failed to update source status: {str(e)}", "ERROR")
-
-    def extract_article(
-        self, url: str, job_data: Dict[str, Any], is_source_url: bool = False
-    ) -> Optional[Dict[str, Any]]:
-        """Extract article content using newspaper3k"""
-        try:
-            # Check for existing article unless it's the source URL
-            if not is_source_url and self.is_article_exists(
-                url, job_data["categoryId"]
-            ):
-                self.log(f"Article already exists: {url}")
-                return None
-
-            # [Rest of the article extraction logic remains the same...]
-            article = Article(url, language="en")
-            article.download()
-            article.parse()
-            article.nlp()
-
-            matched_keywords = [
-                keyword
-                for keyword in job_data["categoryKeywords"]
-                if keyword.lower() in article.text.lower()
-            ]
-            self.log(f"Extracted article url: {url}")
-            article_data = {
-                "_id": ObjectId(),
-                "title": article.title,
-                "sourceId": job_data["sourceId"],
-                "categoryId": job_data["categoryId"],
-                "url": url,
-                "publishDate": (
-                    article.publish_date.isoformat() if article.publish_date else None
-                ),
-                "createdAt": datetime.utcnow().isoformat(),
-                "content": article.text,
-                "keywords": article.keywords,
-                "summary": article.summary,
-                "metadata": {
-                    "authors": article.authors,
-                    "topImage": article.top_image,
-                    "images": list(article.images),
-                    "categoryKeywords": job_data["categoryKeywords"],
-                    "matchedKeywords": matched_keywords,
-                },
-            }
-
-            self.db.articles_collection.insert_one(article_data)
-            return article_data
-
-        except Exception as e:
-            self.log(f"Article extraction failed for {url}: {str(e)}", "ERROR")
-            return None
-
-    def get_domain_links(self, url: str, domain: str) -> Set[str]:
-        """Extract links from page that match the domain"""
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            links = set()
-            for a_tag in soup.find_all("a", href=True):
-                link = urljoin(url, a_tag["href"])
-                if domain in link:
-                    links.add(link)
-
-            return links
-        except Exception as e:
-            self.log(f"Link extraction failed for {url}: {str(e)}", "ERROR")
-            return set()
 
     def initialize_metadata(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize metadata structure for new job"""
@@ -170,17 +63,33 @@ class CrawlerSession:
             "total_executions": 1,
         }
 
-    def process_with_timeout(
-        self,
-        job_id: str,
-        max_depth: int = 2,
-        max_pages: int = 20,
-        time_limit: int = 600,
-    ) -> Dict[str, Any]:
+    def update_job_status(self, job_id: str, updates: Dict[str, Any]) -> None:
+        """Update job status in MongoDB"""
+        try:
+            self.db.job_executions_collection.update_one(
+                {"_id": ObjectId(job_id)},
+                {"$set": {**updates, "updatedAt": datetime.utcnow()}},
+            )
+        except Exception as e:
+            self.error(f"Failed to update job status: {str(e)}", "ERROR")
+            raise
+
+    def update_source_status(self, source_id: str, updates: Dict[str, Any]) -> None:
+        """Update source status in MongoDB"""
+        try:
+            self.db.sources_collection.update_one(
+                {"_id": ObjectId(source_id)},
+                {"$set": {**updates, "updatedAt": datetime.utcnow()}},
+            )
+        except Exception as e:
+            self.error(f"Failed to update source status: {str(e)}")
+
+    def crawl(self, job_id: str) -> Dict[str, Any]:
         """Main processing function with timeout handling"""
         start_time = datetime.utcnow()
+        print("Crawling")
+        self.log("Processing started")
 
-        # Get job details
         job_data = self.db.job_executions_collection.find_one({"_id": ObjectId(job_id)})
         if not job_data:
             raise ValueError(f"Job not found: {job_id}")
@@ -198,14 +107,14 @@ class CrawlerSession:
         to_visit = progress.get("to_visit", [(job_data["sourceUrl"], 0)])
         processed_urls = []
         total_processed = progress.get("total_processed", 0)
-        remaining_pages = max_pages - total_processed
+        remaining_pages = self.max_pages - total_processed
         unique_processed_count = 0  # Counter for new articles only
 
         domain = urlparse(job_data["sourceUrl"]).netloc
 
         try:
             while to_visit and unique_processed_count < remaining_pages:
-                if (datetime.utcnow() - start_time).total_seconds() > time_limit:
+                if (datetime.utcnow() - start_time).total_seconds() > self.time_limit:
                     self.log("Time limit reached, saving progress")
                     break
 
@@ -215,19 +124,48 @@ class CrawlerSession:
                 if current_url not in visited:
                     visited.add(current_url)
 
-                    # Process article
-                    article_data = self.extract_article(
+                    # Process article if it doesnt exist
+                    does_article_exist = self.is_article_exists(
+                        current_url, job_data["categoryId"]
+                    )
+                    if not is_source_url and does_article_exist:
+                        self.log(f"Article already exists: {current_url}")
+                        continue  # skip to next iteration
+
+                    article_data = self.article_extractor.extract_article(
                         current_url, job_data, is_source_url=is_source_url
                     )
 
                     if article_data:
-                        processed_urls.append(str(article_data["_id"]))
-                        if not is_source_url:
+                        if not does_article_exist:  # only save non-source articles
+                            article_data["_id"] = (
+                                self.db.articles_collection.insert_one(
+                                    {**article_data, "createdAt": datetime.utcnow()}
+                                ).inserted_id
+                            )
                             unique_processed_count += 1
+                            self.log(
+                                f"Processed article: {current_url} with ID {str(article_data['_id'])}"
+                            )
+                        elif is_source_url:
+                            self.db.articles_collection.update_one(
+                                {
+                                    "url": current_url,
+                                    "categoryId": job_data["categoryId"],
+                                },
+                                {"$set": article_data},
+                            )
+                            article_data["_id"] = does_article_exist["_id"]
+                            self.log(
+                                f"Updated source article: {current_url} with ID {article_data['_id']}"
+                            )
+                        processed_urls.append(str(article_data["_id"]))
 
                         # Get more links if within depth limit
-                        if depth < max_depth:
-                            new_links = self.get_domain_links(current_url, domain)
+                        if depth < self.max_depth:
+                            new_links = self.link_extractor.get_domain_links(
+                                current_url, domain
+                            )
                             for link in new_links - visited:
                                 to_visit.append((link, depth + 1))
 
@@ -238,12 +176,12 @@ class CrawlerSession:
                 "visited": list(visited),
                 "to_visit": to_visit,
                 "total_processed": new_total_processed,
-                "is_completed": len(to_visit) == 0 or new_total_processed >= max_pages,
-                "max_pages": max_pages,  # Store the limit for reference
-                "max_depth": max_depth,  # Store the depth limit for reference
+                "is_completed": len(to_visit) == 0
+                or new_total_processed >= self.max_pages,
+                "max_pages": self.max_pages,  # Store the limit for reference
+                "max_depth": self.max_depth,  # Store the depth limit for reference
             }
 
-            # [Rest of the code remains the same...]
             new_metadata = {
                 "crawl_progress": execution_progress,
                 "articleIds": metadata.get("articleIds", []) + processed_urls,
@@ -263,29 +201,54 @@ class CrawlerSession:
             if execution_progress["is_completed"]:
                 status_update.update(
                     {
-                        "completedAt": datetime.utcnow().isoformat(),
+                        "completedAt": datetime.utcnow(),
                         "duration": (datetime.utcnow() - start_time).total_seconds(),
                     }
                 )
                 base = datetime.now()
                 sourceId = job_data.get("sourceId", None)
-                self.log(f"Updating nextRunAt for sourceId: {sourceId}")
-                cron_schedule = self.db.get_cron_schedule_from_sourceId(
-                    sourceId
-                )
+                cron_schedule = self.db.get_cron_schedule_from_sourceId(sourceId)
                 cron = croniter.croniter(cron_schedule, base)
                 next_run_at = cron.get_next(datetime)
-                self.log(f"Next run at: {next_run_at}")
                 self.update_source_status(
                     job_data.get("sourceId"),
                     {
-                        "nextRunAt": next_run_at.isoformat() if next_run_at else None,
-                        "updatedAt": datetime.utcnow().isoformat(),
+                        "status": "idle",
+                        "nextRunAt": next_run_at if next_run_at else None,
+                        "updatedAt": datetime.utcnow(),
                     },
                 )
                 self.log("Processing completed")
+
+                # Trigger article processing function
+                articles = self.db.articles_collection.find(
+                    {
+                        "_id": {
+                            "$in": [
+                                ObjectId(article_id) for article_id in processed_urls
+                            ]
+                        }
+                    }
+                ).to_list(length=len(processed_urls))
+                article_requests = [
+                    ArticleRequest(
+                        article_id=str(article["_id"]), content=article["content"]
+                    )
+                    for article in articles
+                ]
+                self.article_processor.set_keywords(job_data["categoryKeywords"])
+                result = self.article_processor.process_articles(article_requests)
+                # Update the articles with the analysis results
+                self.db.update_articles_with_process_data(result["results"])
+
+                # Log any failed articles
+                if result["failed_articles"]:
+                    self.error(
+                        f"Failed to process {len(result['failed_articles'])} articles",
+                    )
+
             else:
-                self.trigger_function(job_id)
+                self.appwrite_client.trigger_function(job_id)
 
             self.update_job_status(job_id, status_update)
 
@@ -303,13 +266,13 @@ class CrawlerSession:
             }
 
         except Exception as e:
-            self.log(f"Processing failed: {str(e)}", "ERROR")
+            self.error(f"Processing failed: {str(e)}")
             self.update_job_status(
                 job_id,
                 {
                     "status": "error",
                     "error": str(e),
-                    "completedAt": datetime.utcnow().isoformat(),
+                    "completedAt": datetime.utcnow(),
                     "duration": (datetime.utcnow() - start_time).total_seconds(),
                 },
             )
@@ -326,17 +289,21 @@ def main(context):
         if not job_id:
             raise ValueError("Job ID is required")
 
-        # Initialize crawler session
-        mongo_client = MongoSession(context)
-        crawler = CrawlerSession(mongo_client, context)
+        with MongoSession(context) as mongo_client:
+            appwrite_client = AppwriteClient(context)
+            logger = Logger(context)
+            article_extractor = ArticleExtractor(appwrite_client, logger)
+            link_extractor = LinkExtractor(logger)
+            crawler = Crawler(
+                mongo_client,
+                context,
+                appwrite_client,
+                article_extractor,
+                link_extractor,
+                logger,
+            )
 
-        # Process the job
-        result = crawler.process_with_timeout(
-            job_id=job_id,
-            max_depth=request_data.get("maxDepth", 2),
-            max_pages=request_data.get("maxPages", 5),
-            time_limit=request_data.get("timeLimit", 600),
-        )
+            result = crawler.crawl(job_id=job_id)
 
         context.log(f"Execution time: {time.time() - start_time} seconds")
         return context.res.json(result)

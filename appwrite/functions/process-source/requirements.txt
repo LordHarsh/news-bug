@@ -5,3 +5,4 @@ beautifulsoup4
 nltk
 lxml_html_clean
 croniter
+google-generativeai

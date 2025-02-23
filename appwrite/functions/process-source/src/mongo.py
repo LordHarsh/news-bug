@@ -2,6 +2,8 @@
 import pymongo
 import os
 from bson import ObjectId
+from .article_processor import ArticleResponse
+from typing import List
 
 
 class MongoSession:
@@ -40,3 +42,27 @@ class MongoSession:
     def get_cron_schedule_from_sourceId(self, source_id):
         source = self.sources_collection.find_one({"_id": ObjectId(source_id)})
         return source["cronSchedule"]
+
+    def update_articles_with_process_data(self, articles: List[ArticleResponse]):
+        for article in articles:
+            self.context.log(f"Processing article {str(article)}")
+            # Convert DiseaseAnalysis objects to dictionaries
+            keywords_data = [
+                {
+                    "keyword": analysis.keyword,
+                    "location": analysis.location,
+                    "case_count": analysis.case_count,
+                }
+                for analysis in article.data
+            ]
+
+            self.articles_collection.update_one(
+                {"_id": ObjectId(article.article_id)},
+                {
+                    "$set": {
+                        "keywords": keywords_data,  # Now using the dictionary version
+                        "is_article_valid": article.is_valid_article,
+                    }
+                },
+                upsert=True,
+            )

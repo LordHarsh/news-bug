@@ -134,7 +134,7 @@ export default function SidebarList({
                                 </div>
                             )}
                             {pathname === "/sources" && sources.map((source) => (
-                                <SidebarLink key={source.id} item={source} type='source' />
+                                <SidebarLink key={source._id} item={source} type='source' />
                             ))}
                             {pathname !== "/sources" && categories.map((category) => (
                                 <SidebarLink key={category.id} item={category} onClick={(item) => onSelectCategory(item as Category)} type='category' />

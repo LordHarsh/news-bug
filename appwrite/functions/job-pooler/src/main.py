@@ -73,9 +73,9 @@ class SourcePoller:
             categoryId=str(category["_id"]),
             sourceUrl=source["url"],
             categoryKeywords=category.get("keywords", []),
-            startedAt=now.isoformat(),
-            createdAt=now.isoformat(),
-            updatedAt=now.isoformat(),
+            startedAt=now,
+            createdAt=now,
+            updatedAt=now,
         )
 
         try:
@@ -110,7 +110,7 @@ class SourcePoller:
                     "$set": {
                         "status": "error",
                         "error": error_msg,
-                        "updatedAt": datetime.now(timezone.utc).isoformat(),
+                        "updatedAt": datetime.now(timezone.utc),
                     }
                 },
             )

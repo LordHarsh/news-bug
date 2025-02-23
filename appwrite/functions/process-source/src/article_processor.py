@@ -80,7 +80,7 @@ class ArticleProcessor:
         keyword_string = ", ".join(self.keywords)
         articles_text = "\n\n".join(
             [
-                f"Article ID: {article.article_id}\n{article.content}"
+                f"\n\n----------Article ID: {article.article_id}----------\n{article.content}\n\n\n"
                 for article in articles
             ]
         )
@@ -92,11 +92,13 @@ Articles:
 {articles_text}
 
 Notes:
-- Include an entry for each article ID
-- Set is_valid_article to false if the article doesn't mention disease outbreaks
+- Includes an entry for each article ID
+- Set is_valid_article to false if the article is an advertisement or not a valid article
 - For case_count: use explicit numbers when stated, assume 1 for mentioned cases without numbers
 - Only include diseases in data array if they are mentioned as active cases/outbreaks
+- Must return a data array for each article, even if empty
 - Return an empty data array if no relevant disease outbreaks are mentioned
+- return the location of the outbreak. Try to extract any location information from the article content. If the location is not mentioned, set it to 'unknown'
 
 Return the results as a JSON object with a 'results' array containing the analysis for each article.
 """
@@ -129,29 +131,28 @@ Return the results as a JSON object with a 'results' array containing the analys
             List[ArticleResponse]: Validated and parsed response
         """
         try:
-            print(response_text)
             parsed_response = json.loads(response_text)
 
             # Validate against BatchResponseSchema
             validated_response = [
                 ArticleAnalysisResult(**item) for item in parsed_response
             ]
-            consoludated_response = []
+            consolidated_response = []
             for i, j in zip(validated_response, batch):
-                consoludated_response.append(
+                consolidated_response.append(
                     ArticleResponse(
                         article_id=j.article_id,
                         is_valid_article=i.is_valid_article,
                         data=i.data,
                     )
                 )
-            return validated_response
+            return consolidated_response
 
         except Exception as e:
             logger.error(f"Error validating Gemini response: {e}")
             return []
 
-    def process_articles(self, articles: List[ArticleRequest]) -> List[ArticleResponse]:
+    def process_articles(self, articles: List[ArticleRequest]):
         """
         Process multiple articles in batches.
 
@@ -171,7 +172,6 @@ Return the results as a JSON object with a 'results' array containing the analys
 
             try:
                 prompt = self._create_batch_prompt(batch)
-                print(prompt)
                 response = self.model.generate_content(
                     prompt,
                     generation_config=genai.GenerationConfig(
@@ -231,13 +231,14 @@ def main():
 
     # Process articles
     response = processor.process_articles(articles)
-    
+
     results = response["results"]
     failed_articles = response["failed_articles"]
 
     # Print results
     print(json.dumps([result.model_dump() for result in results], indent=2))
     print(f"Failed to process {len(failed_articles)} articles")
+
 
 if __name__ == "__main__":
     main()
