@@ -113,6 +113,26 @@
             "commands": "pip install -r requirements.txt",
             "path": "functions/process-source",
             "specification": "s-0.5vcpu-512mb"
+        },
+        {
+            "$id": "67c545bc003d66caf8fd",
+            "name": "analyse-article",
+            "runtime": "python-3.12",
+            "specification": "s-1vcpu-512mb",
+            "execute": [
+                "any"
+            ],
+            "events": [],
+            "scopes": [
+                "users.read"
+            ],
+            "schedule": "*/5 * * * *",
+            "timeout": 15,
+            "enabled": true,
+            "logging": true,
+            "entrypoint": "src/main.py",
+            "commands": "pip install -r requirements.txt",
+            "path": "functions/analyse-article"
         }
     ]
 }
