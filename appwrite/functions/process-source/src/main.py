@@ -140,7 +140,11 @@ class Crawler:
                         if not does_article_exist:  # only save non-source articles
                             article_data["_id"] = (
                                 self.db.articles_collection.insert_one(
-                                    {**article_data, "createdAt": datetime.utcnow()}
+                                    {
+                                        **article_data,
+                                        "status": "data_extracted",
+                                        "createdAt": datetime.utcnow(),
+                                    }
                                 ).inserted_id
                             )
                             unique_processed_count += 1
@@ -153,7 +157,7 @@ class Crawler:
                                     "url": current_url,
                                     "categoryId": job_data["categoryId"],
                                 },
-                                {"$set": article_data},
+                                {"$set": article_data, "status": "data_extracted"},
                             )
                             article_data["_id"] = does_article_exist["_id"]
                             self.log(
