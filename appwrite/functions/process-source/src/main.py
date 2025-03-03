@@ -221,36 +221,36 @@ class Crawler:
                 self.log("Processing completed")
 
                 # Trigger article processing function
-                articles = self.db.articles_collection.find(
-                    {
-                        "_id": {
-                            "$in": [
-                                ObjectId(article_id) for article_id in processed_urls
-                            ]
-                        }
-                    }
-                ).to_list(length=len(processed_urls))
-                article_requests = [
-                    ArticleRequest(
-                        article_id=str(article["_id"]), content=article["content"]
-                    )
-                    for article in articles
-                ]
-                self.article_processor.set_keywords(job_data["categoryKeywords"])
-                result = self.article_processor.process_articles(article_requests)
-                # Update the articles with the analysis results
-                self.db.update_articles_with_process_data(result["results"])
+            #     articles = self.db.articles_collection.find(
+            #         {
+            #             "_id": {
+            #                 "$in": [
+            #                     ObjectId(article_id) for article_id in processed_urls
+            #                 ]
+            #             }
+            #         }
+            #     ).to_list(length=len(processed_urls))
+            #     article_requests = [
+            #         ArticleRequest(
+            #             article_id=str(article["_id"]), content=article["content"]
+            #         )
+            #         for article in articles
+            #     ]
+            #     self.article_processor.set_keywords(job_data["categoryKeywords"])
+            #     result = self.article_processor.process_articles(article_requests)
+            #     # Update the articles with the analysis results
+            #     self.db.update_articles_with_process_data(result["results"])
 
-                # Log any failed articles
-                if result["failed_articles"]:
-                    self.error(
-                        f"Failed to process {len(result['failed_articles'])} articles",
-                    )
+            #     # Log any failed articles
+            #     if result["failed_articles"]:
+            #         self.error(
+            #             f"Failed to process {len(result['failed_articles'])} articles",
+            #         )
 
-            else:
-                self.appwrite_client.trigger_function(job_id)
+            # else:
+            #     self.appwrite_client.trigger_function(job_id)
 
-            self.update_job_status(job_id, status_update)
+            # self.update_job_status(job_id, status_update)
 
             return {
                 "success": True,
