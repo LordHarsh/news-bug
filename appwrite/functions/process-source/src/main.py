@@ -35,7 +35,7 @@ class Crawler:
         self.error = logger.error
 
         self.max_depth = 2
-        self.max_pages = 5
+        self.max_pages = 1000
         self.time_limit = 600
 
         self.api_key = os.environ.get("GEMINI_API_KEY")

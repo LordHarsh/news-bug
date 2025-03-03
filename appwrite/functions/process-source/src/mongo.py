@@ -51,7 +51,7 @@ class MongoSession:
                 {
                     "keyword": analysis.keyword,
                     "location": analysis.location,
-                    "case_count": analysis.case_count,
+                    "caseCount": analysis.case_count,
                 }
                 for analysis in article.data
             ]
@@ -60,8 +60,9 @@ class MongoSession:
                 {"_id": ObjectId(article.article_id)},
                 {
                     "$set": {
-                        "keywords": keywords_data,  # Now using the dictionary version
-                        "is_article_valid": article.is_valid_article,
+                        "keywords": keywords_data,
+                        "isArticleValid": article.is_valid_article,
+                        "updatedAt": article.updated_at,
                     }
                 },
                 upsert=True,

@@ -1,8 +1,7 @@
 import google.generativeai as genai
 import json
-from typing import List, Dict, Optional
+from typing import List
 from pydantic import BaseModel
-from concurrent.futures import ThreadPoolExecutor
 import logging
 
 # Set up logging
