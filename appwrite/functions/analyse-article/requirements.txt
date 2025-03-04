@@ -1,1 +1,3 @@
 appwrite
+pymongo
+google-generativeai

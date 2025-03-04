@@ -1,17 +1,14 @@
 # create and export a mongodb session
 import pymongo
-import os
+from datetime import datetime
 from bson import ObjectId
-from .article_processor import ArticleResponse
+from .geocode import GeoProcessedArticle
 from typing import List
 
 
 class MongoSession:
-    def __init__(self, context=None):
-        uri = os.environ.get("MONGODB_URI")
-        if not uri:
-            raise ValueError("MONGODB_URI environment variable is not set")
-        self.client = pymongo.MongoClient(uri)
+    def __init__(self, context=None, mongo_uri=None):
+        self.client = pymongo.MongoClient(mongo_uri)
         self.db = self.client["disease-data"]
         self.categories_collection = self.db.get_collection("categories")
         self.sources_collection = self.db.get_collection("sources")
@@ -49,9 +46,14 @@ class MongoSession:
 
         result = self.articles_collection.aggregate(pipeline)
         result_list = list(result)
-
         # Return the articles array from the first group, or empty list if none found
         return result_list[0]["articles"] if result_list else []
+
+    def get_keywords_from_category(self, category_id):
+        category = self.categories_collection.find_one(
+            {"_id": ObjectId(category_id)}, {"keywords": 1}
+        )
+        return category["keywords"]
 
     def check_if_url_exists(self, url, category_id):
         return (
@@ -63,7 +65,7 @@ class MongoSession:
         source = self.sources_collection.find_one({"_id": ObjectId(source_id)})
         return source["cronSchedule"]
 
-    def update_articles_with_process_data(self, articles: List[ArticleResponse]):
+    def update_articles_with_process_data(self, articles: List[GeoProcessedArticle]):
         for article in articles:
             self.context.log(f"Processing article {str(article)}")
             # Convert DiseaseAnalysis objects to dictionaries
@@ -72,6 +74,8 @@ class MongoSession:
                     "keyword": analysis.keyword,
                     "location": analysis.location,
                     "caseCount": analysis.case_count,
+                    "latitude": analysis.latitude,
+                    "longitude": analysis.longitude,
                 }
                 for analysis in article.data
             ]
@@ -82,7 +86,8 @@ class MongoSession:
                     "$set": {
                         "keywords": keywords_data,
                         "isArticleValid": article.is_valid_article,
-                        "updatedAt": article.updated_at,
+                        "updatedAt": datetime.utcnow(),
+                        "status": "completed",
                     }
                 },
                 upsert=True,

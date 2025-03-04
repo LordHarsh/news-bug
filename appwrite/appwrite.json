@@ -118,7 +118,6 @@
             "$id": "67c545bc003d66caf8fd",
             "name": "analyse-article",
             "runtime": "python-3.12",
-            "specification": "s-1vcpu-512mb",
             "execute": [
                 "any"
             ],
