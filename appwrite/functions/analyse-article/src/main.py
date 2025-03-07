@@ -53,7 +53,7 @@ def main(context):
                 f"Article analysis completed successfully for {len(articles)} articles"
             )
             total_articles += len(articles)
-            articles = mongo_client.get_articles_for_analysis
+            articles = mongo_client.get_articles_for_analysis()
         logger.info(f"Processed {total_articles} articles")
     except Exception as e:
         logger.error(f"Failed to process article: {str(e)}")

@@ -70,3 +70,47 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+
+/* Sleek, minimalist scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin; /* For Firefox */
+  scrollbar-color: rgba(155, 155, 155, 0.3) transparent; /* Thin, semi-transparent scrollbar */
+}
+
+/* Webkit (Chrome, Safari, newer Opera) scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px; /* Extra thin scrollbar */
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent; /* Transparent track */
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(155, 155, 155, 0.3); /* Semi-transparent thumb */
+  border-radius: 10px;
+  visibility: hidden;
+  opacity: 0;
+  transition: 
+    background-color 0.3s ease,
+    opacity 0.3s ease,
+    visibility 0.3s;
+}
+
+/* Show scrollbar on hover and when scrolling */
+.custom-scrollbar:hover::-webkit-scrollbar-thumb,
+.custom-scrollbar:focus-within::-webkit-scrollbar-thumb,
+.custom-scrollbar:active::-webkit-scrollbar-thumb {
+  visibility: visible;
+  opacity: 1;
+  background-color: rgba(100, 100, 100, 0.5);
+}
+
+/* Improve scroll experience on touch devices */
+.will-change-scroll {
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}

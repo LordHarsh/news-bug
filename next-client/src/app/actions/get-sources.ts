@@ -3,7 +3,7 @@
 import db from "@/lib/mongodb";
 import { Source } from "@/lib/types/souces";
 
-export interface Props {
+interface Props {
     categoryId: string;
 }
 

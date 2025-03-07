@@ -2,7 +2,6 @@ import type { Config } from "tailwindcss";
 import flattenColorPalette from "tailwindcss/lib/util/flattenColorPalette";
 import tailwindcssAnimate from "tailwindcss-animate";
 
-
 export default {
     darkMode: ["class"],
     content: [
