@@ -28,8 +28,10 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { FaMapMarkedAlt } from "react-icons/fa"
+import { useKeywordsStore } from "@/stores/useKeywords"
+import { KeywordDetails } from "@/lib/types/keyword"
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -46,9 +48,14 @@ export function DataTable<TData, TValue>({
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(
-    []
-  )
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+
+  // Get access to the keywords store
+  const { keywords, setKeywords } = useKeywordsStore()
+
+  // Track if filters are being applied from the store or UI
+  const [isUpdatingFromStore, setIsUpdatingFromStore] = useState(false)
+
   const table = useReactTable({
     data,
     columns,
@@ -56,7 +63,34 @@ export function DataTable<TData, TValue>({
     getPaginationRowModel: getPaginationRowModel(),
     onSortingChange: setSorting,
     getSortedRowModel: getSortedRowModel(),
-    onColumnFiltersChange: setColumnFilters,
+    onColumnFiltersChange: (filters) => {
+      setColumnFilters(filters)
+
+      // Only update the store if the change came from the UI
+      if (!isUpdatingFromStore) {
+        // Get the actual filters array
+        const actualFilters = typeof filters === 'function' ? filters(columnFilters) : filters;
+        
+        // Find the keyword filter if it exists
+        const keywordFilter = actualFilters.find((filter: any) => filter.id === "keyword")
+
+        if (keywordFilter) {
+          const filterValue = keywordFilter.value as string
+
+          // Apply the filter to the keywords in the store
+          // This is a simple example - you might need more complex logic
+          // depending on your exact requirements
+          const filteredKeywords = data.filter(item =>
+            (item as any).keyword?.toLowerCase().includes(filterValue.toLowerCase())
+          ) as KeywordDetails[]
+
+          setKeywords(filteredKeywords)
+        } else {
+          // If no keyword filter, reset to use all keywords
+          setKeywords(data as KeywordDetails[])
+        }
+      }
+    },
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     state: {
@@ -66,15 +100,40 @@ export function DataTable<TData, TValue>({
     },
   })
 
+  // When keywords change in the store, update the table filter
+  useEffect(() => {
+    const keywordColumn = table.getColumn("keyword")
+    if (keywordColumn) {
+      const currentFilterValue = keywordColumn.getFilterValue() as string
+
+      // Only update if the filter needs to change
+      // This helps prevent infinite loops
+      if (keywords.length < data.length && currentFilterValue === "") {
+        setIsUpdatingFromStore(true)
+
+        // Create a filter that would match the keywords in the store
+        // This is a simplified approach - you may need to adjust based on your needs
+        const keywordValues = keywords.map(k => k.keyword)
+        if (keywordValues.length > 0) {
+          // Using the first keyword as a filter example
+          // You might want a more sophisticated approach
+          keywordColumn.setFilterValue(keywordValues[0])
+        }
+
+        setTimeout(() => setIsUpdatingFromStore(false), 0)
+      }
+    }
+  }, [keywords, table, data])
+
   return (
     <div className="m-2">
       <div className="flex items-center py-4">
         <Input
           placeholder="Filter keyword..."
           value={(table.getColumn("keyword")?.getFilterValue() as string) ?? ""}
-          onChange={(event) =>
+          onChange={(event) => {
             table.getColumn("keyword")?.setFilterValue(event.target.value)
-          }
+          }}
           className="max-w-sm"
         />
         <DropdownMenu>
@@ -107,7 +166,7 @@ export function DataTable<TData, TValue>({
         </DropdownMenu>
         <Button
           onClick={() => setViewMap(!viewMap)}
-          className="shadow-md hover:shadow-lg transition-shadow"
+          className="shadow-md hover:shadow-lg transition-shadow ml-2"
         >
           <FaMapMarkedAlt className="mr-2" />
           {viewMap ? 'Hide Map' : 'Show Map'}

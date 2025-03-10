@@ -21,6 +21,12 @@ export async function getKeywords({ categoryId }: { categoryId: string }) {
             {
                 $unwind: "$keywords"
             },
+            // Filter out keywords with unknown location
+            {
+                $match: {
+                    "keywords.location": { $ne: "unknown" }
+                }
+            },
             // Reshape the document to include articleId
             {
                 $project: {
