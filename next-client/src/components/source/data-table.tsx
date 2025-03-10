@@ -29,15 +29,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useState } from "react"
+import { FaMapMarkedAlt } from "react-icons/fa"
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
+  viewMap: boolean
+  setViewMap: (value: boolean) => void
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
+  viewMap,
+  setViewMap,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
@@ -100,6 +105,13 @@ export function DataTable<TData, TValue>({
               })}
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button
+          onClick={() => setViewMap(!viewMap)}
+          className="shadow-md hover:shadow-lg transition-shadow"
+        >
+          <FaMapMarkedAlt className="mr-2" />
+          {viewMap ? 'Hide Map' : 'Show Map'}
+        </Button>
       </div>
       <div className="rounded-md border">
         <Table>

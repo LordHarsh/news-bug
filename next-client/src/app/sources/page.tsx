@@ -30,16 +30,24 @@ const SourcePage = () => {
   return (
     <div
       className="container mx-auto
+      w-full
         overflow-y-auto 
         custom-scrollbar 
-        will-change-scroll"
+        will-change-scroll relative"
     >
-      <Button className='relative float-right mx-4 mt-6'
-        onClick={() => setViewMap(!viewMap)}>
-        <FaMapMarkedAlt />
-      </Button>
-      {viewMap && <MapView keywords={keywords} />}
-      <DataTable columns={columns} data={keywords} />
+      {viewMap &&
+        <>
+          <Button
+            onClick={() => setViewMap(!viewMap)}
+            className="shadow-md hover:shadow-lg transition-shadow absolute top-4 right-4 z-[19]"
+          >
+            <FaMapMarkedAlt className="mr-2" />
+            {viewMap ? 'Hide Map' : 'Show Map'}
+          </Button>
+          <MapView keywords={keywords} />
+        </>
+      }
+      <DataTable columns={columns} data={keywords} viewMap={viewMap} setViewMap={setViewMap} />
     </div>
   )
 }

@@ -44,8 +44,8 @@ export async function getKeywords({ categoryId }: { categoryId: string }) {
                 location: doc.location,
                 latitude: doc.latitude,
                 longitude: doc.longitude,
-                articleId: doc.articleId,
-                sourceId: doc.sourceId
+                articleId: doc.articleId.toString(),
+                sourceId: doc.sourceId ? doc.sourceId.toString() : ''
             }
         });
         console.log("data", result)
