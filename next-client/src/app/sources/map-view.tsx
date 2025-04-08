@@ -201,8 +201,6 @@ const MapView = ({ keywords }: Props) => {
                         <div style="color: #333333;">
                         <h3>Keyword: ${keyword}</h3>
                         <p>Case Count: ${caseCount}</p>
-                        <p>Point Count: ${pointCount}</p>
-                        <p>Case Count: ${sumCaseCount}</p>
                         <p>Location: ${location}</p>
                         <p>Articles: ${properties.articleId?.length || 0}</p>
                         <p>Sources: ${properties.sourceId?.length || 0}</p>
