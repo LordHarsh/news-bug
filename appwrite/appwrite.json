@@ -92,7 +92,8 @@
             "timeout": 30,
             "entrypoint": "src/main.py",
             "commands": "pip install -r requirements.txt",
-            "path": "functions/job-pooler"
+            "path": "functions/job-pooler",
+            "specification": "s-1vcpu-512mb"
         },
         {
             "$id": "67ac0cb30031712f59db",

@@ -44,7 +44,12 @@ const MapView = ({ keywords }: Props) => {
 
         const map = new mapboxgl.Map({
             container: mapContainerRef.current,
-            style: 'mapbox://styles/mapbox/dark-v11',
+            // Change from dark-v11 to a colored style
+            style: 'mapbox://styles/mapbox/streets-v12', // Colorful street map style
+            // Other options include:
+            // 'mapbox://styles/mapbox/outdoors-v12' - Terrain-focused map with natural features
+            // 'mapbox://styles/mapbox/light-v11' - Light colored map
+            // 'mapbox://styles/mapbox/satellite-streets-v12' - Satellite imagery with street overlays
             center: [centerLng, centerLat],
             zoom: 3
         });
@@ -196,8 +201,6 @@ const MapView = ({ keywords }: Props) => {
                         <div style="color: #333333;">
                         <h3>Keyword: ${keyword}</h3>
                         <p>Case Count: ${caseCount}</p>
-                        <p>Point Count: ${pointCount}</p>
-                        <p>Case Count: ${sumCaseCount}</p>
                         <p>Location: ${location}</p>
                         <p>Articles: ${properties.articleId?.length || 0}</p>
                         <p>Sources: ${properties.sourceId?.length || 0}</p>

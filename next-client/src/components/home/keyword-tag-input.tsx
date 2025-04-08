@@ -31,7 +31,7 @@ export function KeywordsTagInput({
     };
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+        if (e.key === 'Enter') {
             e.preventDefault();
             addKeyword();
         } else if (e.key === 'Backspace' && inputValue === '' && keywords.length > 0) {
@@ -58,14 +58,30 @@ export function KeywordsTagInput({
                         </Button>
                     </div>
                 ))}
-                <Input
-                    ref={inputRef}
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Add keywords (press Enter to add)"
-                    className="flex-grow border-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                />
+                <div className="flex flex-grow">
+                    <Input
+                        ref={inputRef}
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Add keywords (press Enter to add)"
+                        className="flex-grow border-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                    {inputValue.trim() && (
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={addKeyword}
+                            className="ml-1"
+                        >
+                            Add
+                        </Button>
+                    )}
+                </div>
+            </div>
+            <div className="text-xs text-gray-500">
+                Enter each keyword or phrase and press Enter. Multi-word phrases are supported.
             </div>
         </div>
     );

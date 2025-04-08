@@ -175,16 +175,16 @@ class ArticleProcessor:
         )
 
         return f"""
-Analyze the following news articles to detect if they report new cases of diseases from this list: {keyword_string}.
+Analyze the following news articles to detect if they report new cases of diseases from this list which contains deasease name or symptom: {keyword_string}.
 
 Articles:
 {articles_text}
 
 Instructions:
 1. For each article, determine if it's a valid news article (not an advertisement or irrelevant content)
-2. Identify any mentions of active cases or outbreaks of the listed diseases
+2. Identify any mentions of active cases or outbreaks of the listed diseases/symptoms
 3. Extract the following for each disease mention:
-   - Disease name (keyword)
+   - Disease name (keyword/symptom)
    - Location of the outbreak (use 'unknown' if not specified)
    - Number of cases (use exact number when stated, assume 1 for unspecified cases)
 4. Return the count of the article for better tracking and the extracted data for each disease mention.
@@ -196,7 +196,7 @@ Format requirements:
   - is_valid_article: boolean value
   - data: array of disease mentions (empty array if none found)
 - Each disease mention in data must include:
-  - keyword: string (the disease name)
+  - keyword: string (the disease name/symptom)
   - location: string (the outbreak location, 'unknown' if not mentioned)
   - case_count: integer (number of cases)
 - Include an analysis for every article, even if no diseases are mentioned
