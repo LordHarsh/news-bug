@@ -15,4 +15,5 @@ export interface KeywordDetails {
     longitude: number;
     articleId: string[];
     sourceId: string[];
+    date: Date;
 }

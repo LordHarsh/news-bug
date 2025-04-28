@@ -27,7 +27,7 @@ export async function getKeywords({ categoryId }: { categoryId: string }) {
                     "keywords.location": { $ne: "unknown" }
                 }
             },
-            // Reshape the document to include articleId
+            // Reshape the document to include articleId and date
             {
                 $project: {
                     _id: 0,
@@ -36,7 +36,9 @@ export async function getKeywords({ categoryId }: { categoryId: string }) {
                     caseCount: "$keywords.caseCount",
                     latitude: "$keywords.latitude",
                     longitude: "$keywords.longitude",
-                    articleId: "$_id"
+                    articleId: "$_id",
+                    sourceId: "$sourceId",
+                    date: { $ifNull: ["$publishDate", "$createdAt"] }
                 }
             }
         ]
@@ -51,7 +53,8 @@ export async function getKeywords({ categoryId }: { categoryId: string }) {
                 latitude: doc.latitude,
                 longitude: doc.longitude,
                 articleId: doc.articleId.toString(),
-                sourceId: doc.sourceId ? doc.sourceId.toString() : ''
+                sourceId: doc.sourceId ? doc.sourceId.toString() : '',
+                date: doc.date
             }
         });
         console.log("data", result)
