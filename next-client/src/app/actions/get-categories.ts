@@ -13,8 +13,8 @@ export async function getCategories() {
       keywords: doc.keywords
     })) as Category[];
     return { success: true, data: result };
-  } catch (e: any) {
+  } catch (e) {
     console.error(e);
-    return { success: false, error: e.message || 'Error fetching categories', data: [] };
+    return { success: false, error: 'Error fetching categories', data: [] };
   }
 }

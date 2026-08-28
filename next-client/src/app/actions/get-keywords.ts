@@ -2,35 +2,31 @@
 
 import { getDb } from '@/lib/mongodb';
 import { KeywordDetails } from "@/lib/types/keyword";
-import { ObjectId, UUID } from 'mongodb';
-import { BSON } from 'mongodb';
 
 export async function getKeywords({ categoryId }: { categoryId: string }) {
     try {
+        // Coerce: server-action arguments are client-controlled at runtime.
+        const id = String(categoryId ?? '');
+
         const pipeline = [
-            // Match articles with the specific categoryId
             {
                 $match: {
-                    categoryId: categoryId,
+                    categoryId: id,
                     isArticleValid: true,
-                    // location is not unknown
-                    location: { $ne: "unknown" }
+                    status: 'completed',
                 }
             },
-            // Unwind the keywords array
-            {
-                $unwind: "$keywords"
-            },
-            // Filter out keywords with unknown location
+            { $unwind: "$keywords" },
             {
                 $match: {
-                    "keywords.location": { $ne: "unknown" }
+                    // Only mentions that resolved to a real place can be mapped.
+                    "keywords.location": { $ne: "unknown" },
+                    "keywords.latitude": { $type: "number" },
+                    "keywords.longitude": { $type: "number" },
                 }
             },
-            // Reshape the document to include articleId and date
             {
                 $project: {
-                    _id: 0,
                     location: "$keywords.location",
                     keyword: "$keywords.keyword",
                     caseCount: "$keywords.caseCount",
@@ -40,27 +36,48 @@ export async function getKeywords({ categoryId }: { categoryId: string }) {
                     sourceId: "$sourceId",
                     date: { $ifNull: ["$publishDate", "$createdAt"] }
                 }
-            }
-        ]
-        const keywordCollection = ((await getDb()).collection('articles'));
+            },
+            // One outbreak, one point. News reports running totals, and the same
+            // story is syndicated across outlets — summing every article's
+            // figure multiplied a 5,000-case outbreak into tens of thousands.
+            // Group per week so distinct waves stay distinct, and take the
+            // largest figure reported for that place rather than the sum.
+            {
+                $group: {
+                    _id: {
+                        keyword: "$keyword",
+                        location: "$location",
+                        week: { $dateTrunc: { date: "$date", unit: "week" } }
+                    },
+                    caseCount: { $max: "$caseCount" },
+                    latitude: { $first: "$latitude" },
+                    longitude: { $first: "$longitude" },
+                    articleIds: { $addToSet: "$articleId" },
+                    sourceIds: { $addToSet: "$sourceId" },
+                    date: { $max: "$date" }
+                }
+            },
+            { $sort: { date: -1 } }
+        ];
 
-        const result: KeywordDetails[] = (await keywordCollection.aggregate(pipeline).toArray()).map((doc, i) => {
-            return {
-                _id: i + 1,
-                keyword: doc.keyword,
-                caseCount: doc.caseCount,
-                location: doc.location,
-                latitude: doc.latitude,
-                longitude: doc.longitude,
-                articleId: doc.articleId.toString(),
-                sourceId: doc.sourceId ? doc.sourceId.toString() : '',
-                date: doc.date
-            }
-        });
-        console.log("data", result)
+        const articles = (await getDb()).collection('articles');
+        const rows = await articles.aggregate(pipeline).toArray();
+
+        const result: KeywordDetails[] = rows.map((doc, i) => ({
+            _id: i + 1,
+            keyword: doc._id.keyword,
+            caseCount: doc.caseCount,
+            location: doc._id.location,
+            latitude: doc.latitude,
+            longitude: doc.longitude,
+            articleId: (doc.articleIds ?? []).map((x: unknown) => String(x)),
+            sourceId: (doc.sourceIds ?? []).filter(Boolean).map((x: unknown) => String(x)),
+            date: doc.date,
+        }));
+
         return { success: true, data: result };
-    } catch (e: any) {
+    } catch (e) {
         console.error(e);
-        return { success: false, error: e.message || 'Error fetching keywords', data: [] };
+        return { success: false, error: 'Error fetching keywords', data: [] };
     }
 }

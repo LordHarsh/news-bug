@@ -9,7 +9,7 @@ Real-time disease outbreak monitoring platform that crawls news sources, analyze
 - **Category Management** - Create monitoring categories with disease/health keywords (Measles, COVID-19, Flu, etc.)
 - **Source Management** - Add news source URLs with configurable cron-based crawl schedules
 - **Automated Web Crawling** - Depth-limited (max 2 levels, 1000 pages) domain-scoped crawler with duplicate detection
-- **AI-Powered Analysis** - Gemini 2.5 Flash analyzes articles for disease mentions, extracts keywords + locations + case counts
+- **AI-Powered Analysis** - Gemini 3.5 Flash analyzes articles for disease mentions, extracts keywords + locations + case counts
 - **NER Pipeline** - spaCy transformer model (`en_core_web_trf`) for named entity recognition on OCR'd text
 - **PDF Newspaper Processing** - OCR pipeline: PDF → images → Tesseract → spaCy NER → geocoded locations
 - **Geocoding** - Mapbox API converts location names to coordinates for map display
@@ -56,7 +56,7 @@ The entire pipeline runs as serverless functions inside the Next.js app — one 
 | State | Zustand |
 | UI | Radix UI, Framer Motion, TanStack Table |
 | Backend | Next.js route handlers + Vercel Cron (TypeScript) |
-| AI | Gemini 2.5 Flash Lite (`@google/genai`, structured output) |
+| AI | Gemini 3.5 Flash Lite (`@google/genai`, structured output) |
 | Crawling | fetch + cheerio + `@extractus/article-extractor` |
 | Geocoding | Mapbox Geocoding API (v6) |
 | Database | MongoDB Atlas (GeoJSON, 2dsphere indexing) |
@@ -68,7 +68,7 @@ The entire pipeline runs as serverless functions inside the Next.js app — one 
 
 ### Current (Gemini AI)
 1. Articles crawled with a depth-limited domain crawler; readable content extracted via `@extractus/article-extractor`
-2. Batches of 10 sent to Gemini 2.5 Flash Lite with a structured-output schema (model configurable via `GEMINI_MODEL`)
+2. Batches of 10 sent to Gemini 3.5 Flash Lite with a structured-output schema (model configurable via `GEMINI_MODEL`)
 3. Extracts: disease keyword, location, case count (one mention per location)
 4. Batch geocodes locations via the Mapbox Geocoding API
 5. Stores geocoded keyword entries on the article documents in MongoDB

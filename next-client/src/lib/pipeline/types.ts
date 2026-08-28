@@ -19,22 +19,36 @@ export interface ArticleDoc {
   updatedAt: Date;
 }
 
-/** One geocoded disease mention, the shape the dashboard reads. */
+/**
+ * One geocoded disease mention, the shape the dashboard reads.
+ * latitude/longitude are absent when geocoding could not resolve the place —
+ * never 0,0, which would render as a real point off the coast of Africa.
+ */
 export interface KeywordEntry {
   keyword: string;
   location: string;
   caseCount: number;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
+  /** Set when a transient geocoder failure should be retried later. */
+  needsGeocode?: boolean;
 }
 
 export interface CrawlProgress {
-  visited: string[];
+  /**
+   * Every URL ever pushed onto the queue (visited ∪ pending). Checked before
+   * enqueuing so a link shared by many pages is queued exactly once.
+   */
+  enqueued: string[];
   to_visit: Array<[string, number]>;
+  /** Pages dequeued across all slices — bounds jobs on link-heavy sites. */
+  dequeued: number;
   total_processed: number;
   is_completed: boolean;
   max_pages?: number;
   max_depth?: number;
+  /** Legacy field from the pre-`enqueued` format; read once, then migrated. */
+  visited?: string[];
 }
 
 export interface JobMetadata {
@@ -42,6 +56,8 @@ export interface JobMetadata {
   articleIds: string[];
   last_execution_duration: number;
   total_executions: number;
+  /** Consecutive failed slices; a job is only terminal after several. */
+  consecutiveErrors?: number;
 }
 
 export interface JobExecutionDoc {
@@ -50,12 +66,14 @@ export interface JobExecutionDoc {
   categoryId: string;
   sourceUrl: string;
   categoryKeywords: string[];
-  status: 'running' | 'in_progress' | 'completed' | 'error';
+  status: 'running' | 'in_progress' | 'completed' | 'error' | 'cancelled';
   startedAt: Date;
   completedAt?: Date | null;
   duration?: number | null;
   error?: string | null;
   metadata?: JobMetadata | null;
+  /** Held by the invocation currently crawling this job; prevents overlap. */
+  leaseUntil?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -77,16 +95,28 @@ export interface ArticleForAnalysis {
   content: string;
 }
 
-/** Analyses a batch of articles against a keyword list (LLM behind it). */
+/**
+ * Analyses a batch of articles against a keyword list (LLM behind it).
+ * Returns only the articles the model actually reported on — callers must
+ * treat missing ids as "not analysed yet" and retry them.
+ */
 export type Analyser = (
   articles: ArticleForAnalysis[],
   keywords: string[]
 ) => Promise<ArticleAnalysis[]>;
 
-/** Resolves location names to coordinates. Unknown locations map to 0,0. */
-export type Geocoder = (
-  locations: string[]
-) => Promise<Map<string, { latitude: number; longitude: number }>>;
+/** A resolved place. `null` means "no such place" (a definitive answer). */
+export type GeoPoint = { latitude: number; longitude: number };
+
+/**
+ * Resolves location names to coordinates. A name maps to `null` when the
+ * geocoder definitively found nothing; names that failed transiently are
+ * absent from the map entirely so the caller can retry them later.
+ */
+export type Geocoder = (locations: string[]) => Promise<Map<string, GeoPoint | null>>;
+
+/** Thrown for configuration errors (bad token) that must fail the batch loudly. */
+export class GeocoderConfigError extends Error {}
 
 export type Logger = {
   info: (msg: string) => void;
@@ -97,3 +127,6 @@ export const consoleLogger: Logger = {
   info: (msg) => console.log(`[pipeline] ${msg}`),
   error: (msg) => console.error(`[pipeline] ${msg}`),
 };
+
+/** Transient upstream failures should not burn an article's retry budget. */
+export class TransientAnalysisError extends Error {}

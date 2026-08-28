@@ -1,6 +1,17 @@
 'use server';
 import { getDb } from '@/lib/mongodb';
 import Category from '@/lib/types/category';
+import { z } from 'zod';
+
+const categorySchema = z.object({
+  title: z.string().trim().min(1, 'Title is required'),
+  // Keywords drive the AI prompt, so reject blanks that would tell the model
+  // to hunt for nothing.
+  keywords: z
+    .array(z.string().trim().min(1))
+    .min(1, 'At least one keyword is required'),
+  description: z.string().trim().optional(),
+});
 
 
 export async function createCategory(
@@ -15,18 +26,24 @@ export async function createCategory(
   }
 ) {
   try {
+    // Validate at runtime: TypeScript types are erased, and a server action
+    // receives whatever the client serialized.
+    const parsed = categorySchema.safeParse({ title, keywords, description });
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message ?? 'Invalid category',
+      };
+    }
+
     const categoriesCollection = (await getDb()).collection('categories');
-    // Validate the input
-    if (!title) {
-      throw new Error('Title is required');
-    }
-    if (!keywords || keywords.length === 0) {
-      throw new Error('Keywords are required');
-    }
+    const now = new Date();
     const category = {
-      title,
-      keywords,
-      description,
+      title: parsed.data.title,
+      keywords: parsed.data.keywords,
+      description: parsed.data.description ?? '',
+      createdAt: now,
+      updatedAt: now,
     };
     const result = await categoriesCollection.insertOne(category);
     if (!result.acknowledged) {
@@ -43,8 +60,8 @@ export async function createCategory(
       insertedId: result.insertedId.toString(),
       data: categories,
     };
-  } catch (e: any) {
+  } catch (e) {
     console.error(e);
-    return { success: false, error: e.message || 'Error creating category' };
+    return { success: false, error: 'Error creating category' };
   }
 }

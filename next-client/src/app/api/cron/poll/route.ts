@@ -33,12 +33,13 @@ async function handle(req: Request): Promise<NextResponse> {
       success: true,
       createdJobs: poll.createdJobIds,
       healedSources: poll.healedSources,
+      cancelledJobs: poll.cancelledJobs,
       crawls,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[pipeline] poll failed: ${message}`);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Internal error' }, { status: 500 });
   }
 }
 

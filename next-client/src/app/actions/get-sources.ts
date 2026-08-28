@@ -1,7 +1,7 @@
 'use server';
 
 import { getDb } from '@/lib/mongodb';
-import { Source } from "@/lib/types/souces";
+import { Source, serializeSource } from "@/lib/types/souces";
 
 interface Props {
     categoryId: string;
@@ -9,25 +9,16 @@ interface Props {
 
 export const getSources = async ({ categoryId }: Props) => {
     try {
+        // Coerce: server actions deserialize whatever the client sends, so a
+        // TypeScript `string` can arrive as `{ $ne: null }` and widen the query.
+        const id = String(categoryId ?? '');
         const sources = (await getDb()).collection("sources");
-        const result: Source[] = (await sources.find({ categoryId }).toArray()).map((doc) => ({
-            _id: doc._id.toString(),
-            title: doc.title,
-            url: doc.url,
-            categoryId: doc.categoryId,
-            cronSchedule: doc.cronSchedule,
-            isActive: doc.isActive,
-            createdAt: doc.createdAt,
-            updatedAt: doc.updatedAt,
-            lastRunAt: doc.lastRunAt,
-            nextRunAt: doc.nextRunAt,
-            lastError: doc.lastError,
-            status: doc.status,
-            jobExecutionIds: doc.jobExecutionIds
-        }));
+        const result: Source[] = (await sources.find({ categoryId: id }).toArray()).map(
+            serializeSource
+        );
         return { success: true, data: result };
-    } catch (e: any) {
+    } catch (e) {
         console.error(e);
-        return { success: false, error: e.message || "Error getting sources", data: [] };
+        return { success: false, error: "Error getting sources", data: [] };
     }
 }

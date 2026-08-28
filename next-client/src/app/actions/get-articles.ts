@@ -9,14 +9,17 @@ interface Props {
 
 export async function getArticles({ categoryId }: Props) {
     try {
+        // Coerce: a client can send an object here and turn the scoped lookup
+        // into "return everything".
+        const id = String(categoryId ?? '');
         const articlesCollection = (await getDb()).collection('articles');
-        const result: Article[] = (await articlesCollection.find({ categoryId, status: "completed" }).toArray()).map((doc) => ({
+        const result: Article[] = (await articlesCollection.find({ categoryId: id, status: "completed" }).toArray()).map((doc) => ({
             _id: doc._id.toString(),
             title: doc.title,
             sourceId: doc.sourceId,
             categoryId: doc.categoryId,
             url: doc.url,
-            publishedDate: doc.publishedDate,
+            publishedDate: doc.publishDate ?? null,
             content: doc.content,
             createdAt: doc.createdAt,
             updatedAt: doc.updatedAt,
@@ -24,8 +27,8 @@ export async function getArticles({ categoryId }: Props) {
             keywords: doc.keywords
         }))
         return { success: true, data: result };
-    } catch (e: any) {
+    } catch (e) {
         console.error(e);
-        return { success: false, error: e.message || 'Error fetching articles', data: [] };
+        return { success: false, error: 'Error fetching articles', data: [] };
     }
 }

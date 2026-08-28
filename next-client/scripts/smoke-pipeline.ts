@@ -17,6 +17,10 @@ import type { Analyser, Geocoder } from '../src/lib/pipeline/types';
 
 const PORT = 8787;
 
+// The crawler refuses private/loopback hosts by default (SSRF guard); the
+// fake news site below is exactly such a host.
+process.env.PIPELINE_ALLOW_PRIVATE_HOSTS = 'true';
+
 const page = (title: string, body: string, links: string[] = []) => `<!doctype html>
 <html><head><title>${title}</title><meta property="article:published_time" content="2026-08-01T10:00:00Z"></head>
 <body>

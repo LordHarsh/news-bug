@@ -5,12 +5,7 @@ import {
   extractArticle as defaultExtractArticle,
   extractDomainLinks as defaultExtractDomainLinks,
 } from './extract';
-import {
-  consoleLogger,
-  CrawlProgress,
-  JobMetadata,
-  Logger,
-} from './types';
+import { consoleLogger, CrawlProgress, JobMetadata, Logger } from './types';
 
 export interface CrawlDeps {
   fetchHtml: typeof defaultFetchHtml;
@@ -25,6 +20,12 @@ const DEFAULT_DEPS: CrawlDeps = {
 };
 
 const MAX_QUEUE = 5_000;
+/** Pages we may dequeue per job, as a multiple of maxPages. */
+const DEQUEUE_BUDGET_FACTOR = 10;
+/** Failed slices tolerated before a job is declared dead. */
+const MAX_CONSECUTIVE_ERRORS = 3;
+/** How long a slice holds a job; must exceed one invocation's budget. */
+const LEASE_MS = 10 * 60 * 1000;
 
 function intFromEnv(name: string, fallback: number): number {
   const parsed = parseInt(process.env[name] ?? '', 10);
@@ -46,6 +47,7 @@ export interface CrawlResult {
   jobId: string;
   completed: boolean;
   processed: number;
+  skipped?: boolean;
   error?: string;
 }
 
@@ -70,15 +72,31 @@ export async function crawlJob(
   const maxPages = intFromEnv('PIPELINE_MAX_PAGES', 200);
 
   const startTime = Date.now();
-  const job = await jobs.findOne({ _id: new ObjectId(jobId) });
-  if (!job) {
-    return { jobId, completed: true, processed: 0, error: `Job not found: ${jobId}` };
-  }
+  const jobOid = new ObjectId(jobId);
 
+  // Take a lease so two overlapping cron invocations cannot crawl the same job
+  // concurrently and clobber each other's progress.
+  const now0 = new Date();
+  const leased = await jobs.findOneAndUpdate(
+    {
+      _id: jobOid,
+      status: { $in: ['running', 'in_progress'] },
+      $or: [{ leaseUntil: { $lt: now0 } }, { leaseUntil: null }, { leaseUntil: { $exists: false } }],
+    },
+    { $set: { leaseUntil: new Date(now0.getTime() + LEASE_MS), updatedAt: now0 } },
+    { returnDocument: 'after' }
+  );
+  if (!leased) {
+    return { jobId, completed: false, processed: 0, skipped: true };
+  }
+  const job = leased;
+
+  const legacy = job.metadata?.crawl_progress;
   const metadata: JobMetadata = job.metadata ?? {
     crawl_progress: {
-      visited: [],
+      enqueued: [job.sourceUrl],
       to_visit: [[job.sourceUrl, 0]],
+      dequeued: 0,
       total_processed: 0,
       is_completed: false,
     },
@@ -88,12 +106,21 @@ export async function crawlJob(
   };
 
   const progress: CrawlProgress = metadata.crawl_progress;
-  const visited = new Set<string>(progress.visited ?? []);
   const toVisit: Array<[string, number]> = (progress.to_visit ?? [[job.sourceUrl, 0]]).map(
     (entry) => [entry[0], entry[1]] as [string, number]
   );
+  // `enqueued` supersedes the older `visited` array: tracking every URL ever
+  // queued (not just dequeued ones) stops site-wide nav links being pushed
+  // once per crawled page.
+  const enqueued = new Set<string>(
+    progress.enqueued ?? legacy?.visited ?? [job.sourceUrl]
+  );
+  for (const [url] of toVisit) enqueued.add(url);
+
   const totalProcessed = progress.total_processed ?? 0;
   const remainingPages = maxPages - totalProcessed;
+  let dequeued = progress.dequeued ?? 0;
+  const dequeueBudget = maxPages * DEQUEUE_BUDGET_FACTOR;
   const processedIds: string[] = [];
 
   let domain: string;
@@ -103,21 +130,43 @@ export async function crawlJob(
     domain = '';
   }
 
+  /** Persist progress; shared by the success and failure paths. */
+  const buildMetadata = (isCompleted: boolean): JobMetadata => ({
+    crawl_progress: {
+      enqueued: [...enqueued],
+      to_visit: toVisit,
+      dequeued,
+      total_processed: totalProcessed + processedIds.length,
+      is_completed: isCompleted,
+      max_pages: maxPages,
+      max_depth: maxDepth,
+    },
+    articleIds: [...(metadata.articleIds ?? []), ...processedIds],
+    last_execution_duration: (Date.now() - startTime) / 1000,
+    total_executions: (metadata.total_executions ?? 0) + 1,
+  });
+
   try {
     while (toVisit.length > 0 && processedIds.length < remainingPages) {
       if (Date.now() >= deadline) {
         log.info(`Job ${jobId}: time budget reached, saving progress`);
         break;
       }
+      // Pages that yield no article (index pages, short pages) don't advance
+      // processedIds, so bound the crawl by dequeues too or a link-rich site
+      // never terminates.
+      if (dequeued >= dequeueBudget) {
+        log.info(`Job ${jobId}: dequeue budget (${dequeueBudget}) reached`);
+        break;
+      }
 
       const [currentUrl, depth] = toVisit.shift() as [string, number];
-      if (visited.has(currentUrl)) continue;
-      visited.add(currentUrl);
+      dequeued += 1;
 
       const isSourceUrl = currentUrl === job.sourceUrl;
       const existing = await articles.findOne(
         { url: currentUrl, categoryId: job.categoryId },
-        { projection: { _id: 1 } }
+        { projection: { _id: 1, content: 1 } }
       );
       if (!isSourceUrl && existing) continue;
 
@@ -127,9 +176,12 @@ export async function crawlJob(
       // Enqueue same-domain links from every fetched page within the depth
       // limit (the old version only followed links when article extraction
       // succeeded, which killed crawls whose landing page isn't an article).
-      if (depth < maxDepth && domain && toVisit.length < MAX_QUEUE) {
+      if (depth < maxDepth && domain) {
         for (const link of deps.extractDomainLinks(html, currentUrl, domain)) {
-          if (!visited.has(link)) toVisit.push([link, depth + 1]);
+          if (toVisit.length >= MAX_QUEUE) break;
+          if (enqueued.has(link)) continue;
+          enqueued.add(link);
+          toVisit.push([link, depth + 1]);
         }
       }
 
@@ -157,38 +209,34 @@ export async function crawlJob(
         });
         processedIds.push(inserted.insertedId.toString());
       } else if (isSourceUrl) {
+        // Only re-queue for analysis when the text actually changed. A source
+        // pointing at a single article would otherwise pay for Gemini and
+        // Mapbox on every cycle, forever, and overwrite its own keywords.
+        const changed = existing.content !== article.content;
         await articles.updateOne(
-          { url: currentUrl, categoryId: job.categoryId },
-          { $set: { ...doc, status: 'data_extracted' } }
+          { _id: existing._id },
+          {
+            $set: changed
+              ? { ...doc, status: 'data_extracted', analysisAttempts: 0 }
+              : doc,
+          }
         );
       }
     }
 
     const newTotal = totalProcessed + processedIds.length;
-    const isCompleted = toVisit.length === 0 || newTotal >= maxPages;
+    const isCompleted =
+      toVisit.length === 0 || newTotal >= maxPages || dequeued >= dequeueBudget;
     const durationSec = (Date.now() - startTime) / 1000;
-
-    const newMetadata: JobMetadata = {
-      crawl_progress: {
-        visited: [...visited],
-        to_visit: toVisit,
-        total_processed: newTotal,
-        is_completed: isCompleted,
-        max_pages: maxPages,
-        max_depth: maxDepth,
-      },
-      articleIds: [...(metadata.articleIds ?? []), ...processedIds],
-      last_execution_duration: durationSec,
-      total_executions: (metadata.total_executions ?? 0) + 1,
-    };
-
     const now = new Date();
+
     await jobs.updateOne(
-      { _id: new ObjectId(jobId) },
+      { _id: jobOid },
       {
         $set: {
           status: isCompleted ? 'completed' : 'in_progress',
-          metadata: newMetadata,
+          metadata: { ...buildMetadata(isCompleted), consecutiveErrors: 0 },
+          leaseUntil: null,
           updatedAt: now,
           ...(isCompleted ? { completedAt: now, duration: durationSec } : {}),
         },
@@ -196,17 +244,21 @@ export async function crawlJob(
     );
 
     if (isCompleted) {
-      const source = await sources.findOne({ _id: new ObjectId(job.sourceId) });
+      const sourceOid = new ObjectId(String(job.sourceId));
+      const source = await sources.findOne({ _id: sourceOid });
       const nextRunAt = source?.cronSchedule
         ? nextRunFromCron(source.cronSchedule, now)
         : null;
+      // Fenced: only the source's *current* job may release it. An old job
+      // finishing must not free a source another job is actively crawling.
       await sources.updateOne(
-        { _id: new ObjectId(job.sourceId) },
+        { _id: sourceOid, currentJobId: jobId },
         {
           $set: {
             status: 'idle',
             nextRunAt,
             lastError: null,
+            currentJobId: null,
             updatedAt: now,
           },
         }
@@ -219,32 +271,62 @@ export async function crawlJob(
     const message = err instanceof Error ? err.message : String(err);
     log.error(`Job ${jobId} failed: ${message}`);
     const now = new Date();
-    await jobs.updateOne(
-      { _id: new ObjectId(jobId) },
-      {
-        $set: {
-          status: 'error',
-          error: message,
-          completedAt: now,
-          duration: (Date.now() - startTime) / 1000,
-          updatedAt: now,
-        },
+    const consecutiveErrors = (metadata.consecutiveErrors ?? 0) + 1;
+    const terminal = consecutiveErrors >= MAX_CONSECUTIVE_ERRORS;
+
+    // The recovery writes can themselves fail if the connection is what broke.
+    // Leaving the job leased-but-live is safely resumable, so never let this
+    // path throw and abort the rest of the tick's crawls.
+    try {
+      await jobs.updateOne(
+        { _id: jobOid },
+        {
+          $set: {
+            // Keep the slice's progress: a transient DB blip should not throw
+            // away minutes of crawling.
+            metadata: { ...buildMetadata(false), consecutiveErrors },
+            status: terminal ? 'error' : 'in_progress',
+            error: message,
+            leaseUntil: null,
+            updatedAt: now,
+            ...(terminal ? { completedAt: now, duration: (Date.now() - startTime) / 1000 } : {}),
+          },
+        }
+      );
+
+      const sourceOid = new ObjectId(String(job.sourceId));
+      if (terminal) {
+        const source = await sources.findOne({ _id: sourceOid });
+        await sources.updateOne(
+          { _id: sourceOid, currentJobId: jobId },
+          {
+            $set: {
+              status: 'error',
+              lastError: message,
+              currentJobId: null,
+              nextRunAt: source?.cronSchedule
+                ? nextRunFromCron(source.cronSchedule, now)
+                : now,
+              updatedAt: now,
+            },
+          }
+        );
+      } else {
+        // Job lives on: keep the source "running" so the poller doesn't create
+        // a duplicate job alongside the one still making progress.
+        await sources.updateOne(
+          { _id: sourceOid, currentJobId: jobId },
+          { $set: { lastError: message, updatedAt: now } }
+        );
       }
-    );
-    // Free the source so the next scheduled run can retry (the old version
-    // left it stuck in "running" forever after a crash).
-    const source = await sources.findOne({ _id: new ObjectId(job.sourceId) });
-    await sources.updateOne(
-      { _id: new ObjectId(job.sourceId) },
-      {
-        $set: {
-          status: 'error',
-          lastError: message,
-          nextRunAt: source?.cronSchedule ? nextRunFromCron(source.cronSchedule, now) : now,
-          updatedAt: now,
-        },
-      }
-    );
+    } catch (writeErr) {
+      log.error(
+        `Job ${jobId}: failed to persist error state: ${
+          writeErr instanceof Error ? writeErr.message : String(writeErr)
+        }`
+      );
+    }
+
     return { jobId, completed: false, processed: processedIds.length, error: message };
   }
 }
