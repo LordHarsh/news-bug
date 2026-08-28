@@ -36,7 +36,12 @@ const MapView = ({ keywords }: Props) => {
     useEffect(() => {
         if (!mapContainerRef.current || keywords.length === 0) return;
 
-        mapboxgl.accessToken = 'pk.eyJ1IjoibG9yZGhhcnNoIiwiYSI6ImNtN3Q1a3o2MjB5aDIybHNiZjdvOWt0NnMifQ.D4T6wdU-3fMIwdJUIwyLoA';
+        const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+        if (!token) {
+            console.error('NEXT_PUBLIC_MAPBOX_TOKEN is not set; the map cannot load. See .env.example.');
+            return;
+        }
+        mapboxgl.accessToken = token;
 
         // Calculate the center point based on the average of all coordinates
         const centerLat = keywords.reduce((sum, k) => sum + k.latitude, 0) / keywords.length;

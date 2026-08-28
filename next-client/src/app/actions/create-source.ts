@@ -1,9 +1,9 @@
 'use server';
 
-import db from "@/lib/mongodb";
+import { getDb } from '@/lib/mongodb';
 import { z } from "zod";
 import { validateCronExpression } from '@/lib/cron-validator';
-import { Source } from "@/lib/types/souces";
+import { Source, serializeSource } from "@/lib/types/souces";
 
 // Source Schema
 const sourceSchema = z.object({
@@ -52,7 +52,7 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
     }
 
     try {
-        const sourcesCollection = db.collection("sources");
+        const sourcesCollection = (await getDb()).collection("sources");
 
         // Create the initial source document
         const now = new Date();
@@ -77,22 +77,18 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
                 errors: {}
             };
         }
-        const sources: Source[] = (await sourcesCollection.find({ categoryId: validatedFields.data.categoryId }).toArray()).map((source) => ({
-            ...source,
-            _id: source._id.toString(),
-            title: source.title,
-            url: source.url,
-            categoryId: source.categoryId,
-            cronSchedule: source.cronSchedule,
-            isActive: source.isActive,
-            createdAt: source.createdAt.toISOString(),
-            updatedAt: source.updatedAt.toISOString(),
-            lastRunAt: source.lastRunAt ? source.lastRunAt.toISOString() : null,
-            nextRunAt: source.nextRunAt ? source.nextRunAt.toISOString() : null,
-            lastError: source.lastError,
-            status: source.status,
-            jobExecutionIds: source.jobExecutionIds,
-        }));
+        // The insert has already succeeded — never let a serialization problem
+        // in the refetch report failure and invite a duplicate retry.
+        let sources: Source[] = [];
+        try {
+            sources = (
+                await sourcesCollection
+                    .find({ categoryId: validatedFields.data.categoryId })
+                    .toArray()
+            ).map(serializeSource);
+        } catch (e) {
+            console.error('Source created but listing failed:', e);
+        }
 
         return {
             message: "Source created successfully!",
@@ -100,10 +96,10 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
             data: sources,
             errors: {}
         };
-    } catch (e: any) {
+    } catch (e) {
         console.error(e);
         return {
-            message: e.message || "Error creating source",
+            message: "Error creating source",
             success: false,
             data: [],
             errors: {}

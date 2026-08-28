@@ -9,7 +9,7 @@ Real-time disease outbreak monitoring platform that crawls news sources, analyze
 - **Category Management** - Create monitoring categories with disease/health keywords (Measles, COVID-19, Flu, etc.)
 - **Source Management** - Add news source URLs with configurable cron-based crawl schedules
 - **Automated Web Crawling** - Depth-limited (max 2 levels, 1000 pages) domain-scoped crawler with duplicate detection
-- **AI-Powered Analysis** - Gemini 2.0 Flash analyzes articles for disease mentions, extracts keywords + locations + case counts
+- **AI-Powered Analysis** - Gemini 3.5 Flash analyzes articles for disease mentions, extracts keywords + locations + case counts
 - **NER Pipeline** - spaCy transformer model (`en_core_web_trf`) for named entity recognition on OCR'd text
 - **PDF Newspaper Processing** - OCR pipeline: PDF → images → Tesseract → spaCy NER → geocoded locations
 - **Geocoding** - Mapbox API converts location names to coordinates for map display
@@ -23,25 +23,27 @@ Real-time disease outbreak monitoring platform that crawls news sources, analyze
 ## Architecture
 
 ```
-                    ┌─────────────────────────────┐
-                    │   Next.js 15 Dashboard      │
-                    │   (3D Globe + Mapbox Map)    │
-                    └──────────────┬──────────────┘
-                                   │ Server Actions
-                                   ▼
-                    ┌─────────────────────────────┐
-                    │   MongoDB Atlas             │
-                    │   (GeoJSON + 2dsphere idx)  │
-                    └──────────────┬──────────────┘
-                                   ▲
-              ┌────────────────────┼────────────────────┐
-              │                    │                    │
-    ┌─────────┴─────────┐ ┌──────┴───────┐ ┌─────────┴─────────┐
-    │  job-pooler        │ │ process-source│ │ analyse-article    │
-    │  (cron: 10min)     │ │ (web crawler) │ │ (Gemini + geocode) │
-    └────────────────────┘ └──────────────┘ └───────────────────┘
-              Appwrite Serverless Functions
+                 ┌───────────────────────────────────────────┐
+                 │       Next.js 15 app (Vercel)             │
+                 │                                           │
+                 │  Dashboard (3D Globe + Mapbox Map)        │
+                 │        │ Server Actions                   │
+                 │        ▼                                  │
+                 │  ┌─────────────────────────────────────┐  │
+                 │  │ Vercel Cron → API route handlers    │  │
+                 │  │  /api/cron/poll     (every 10 min)  │  │
+                 │  │    source poller + web crawler      │  │
+                 │  │  /api/cron/analyse  (every 5 min)   │  │
+                 │  │    Gemini analysis + geocoding      │  │
+                 │  └─────────────────────────────────────┘  │
+                 └────────────────────┬──────────────────────┘
+                                      ▼
+                 ┌───────────────────────────────────────────┐
+                 │   MongoDB Atlas (disease-data)            │
+                 └───────────────────────────────────────────┘
 ```
+
+The entire pipeline runs as serverless functions inside the Next.js app — one deploy, one host. (It previously ran as Appwrite Cloud Functions; that code remains in `appwrite/` as legacy.)
 
 ---
 
@@ -53,23 +55,23 @@ Real-time disease outbreak monitoring platform that crawls news sources, analyze
 | Visualization | Three.js + React Three Fiber (globe), Mapbox GL (map) |
 | State | Zustand |
 | UI | Radix UI, Framer Motion, TanStack Table |
-| Backend | Appwrite Cloud Functions (Python 3.12) |
-| AI/NLP | Gemini 2.0 Flash Lite, spaCy `en_core_web_trf` |
-| OCR | Tesseract (pytesseract) |
-| Geocoding | Mapbox Geocoding API |
+| Backend | Next.js route handlers + Vercel Cron (TypeScript) |
+| AI | Gemini 3.5 Flash Lite (`@google/genai`, structured output) |
+| Crawling | fetch + cheerio + `@extractus/article-extractor` |
+| Geocoding | Mapbox Geocoding API (v6) |
 | Database | MongoDB Atlas (GeoJSON, 2dsphere indexing) |
-| Legacy Server | FastAPI, PyTorch, OpenCV |
+| Legacy | Appwrite functions (Python), FastAPI + spaCy/Tesseract OCR, Vite client |
 
 ---
 
 ## NLP Pipeline
 
 ### Current (Gemini AI)
-1. Articles crawled via `newspaper3k` extraction
-2. Content sent to Gemini 2.0 Flash Lite with structured prompt
-3. Extracts: disease keyword, location, case count
-4. Batch geocodes locations via Mapbox API
-5. Stores as GeoJSON Points in MongoDB
+1. Articles crawled with a depth-limited domain crawler; readable content extracted via `@extractus/article-extractor`
+2. Batches of 10 sent to Gemini 3.5 Flash Lite with a structured-output schema (model configurable via `GEMINI_MODEL`)
+3. Extracts: disease keyword, location, case count (one mention per location)
+4. Batch geocodes locations via the Mapbox Geocoding API
+5. Stores geocoded keyword entries on the article documents in MongoDB
 
 ### Legacy (spaCy + OCR)
 1. PDF → images via `pdf2image`
@@ -84,63 +86,51 @@ Real-time disease outbreak monitoring platform that crawls news sources, analyze
 
 ```
 news-bug/
-├── next-client/                 # Primary dashboard (Next.js 15)
+├── next-client/                 # THE app (dashboard + pipeline)
 │   ├── src/app/
 │   │   ├── page.tsx            # Home with 3D globe
 │   │   ├── sources/            # Source management + map view
-│   │   └── actions/            # Server actions (CRUD)
-│   ├── src/components/ui/
-│   │   └── globe.tsx           # Three.js globe component
-│   └── src/lib/mongodb.ts      # DB connection
-├── appwrite/functions/          # Serverless pipeline
-│   ├── job-pooler/             # Cron poller (every 10 min)
-│   ├── process-source/         # Web crawler
-│   └── analyse-article/        # Gemini analysis + geocoding
-├── main.py                     # Legacy FastAPI server
-├── scripts/
-│   ├── find_location.py        # spaCy NER + geocoding
-│   └── database.py             # MongoDB helpers
-└── react-client/               # Legacy Vite frontend (Leaflet)
+│   │   ├── actions/            # Server actions (CRUD)
+│   │   └── api/cron/           # Pipeline route handlers
+│   │       ├── poll/           #   source poller + crawler tick
+│   │       └── analyse/        #   Gemini + geocoding tick
+│   ├── src/lib/pipeline/       # Poller, crawler, analyser, gemini, geocode
+│   ├── src/lib/mongodb.ts      # Lazy shared DB connection
+│   ├── scripts/smoke-pipeline.ts  # Keyless end-to-end pipeline test
+│   └── vercel.json             # Cron schedules
+├── .github/workflows/pipeline-cron.yml  # Free scheduler alternative
+├── appwrite/                   # LEGACY: old Appwrite functions (Python)
+├── main.py, scripts/, fastapi-server/   # LEGACY: OCR/spaCy experiments
+└── react-client/               # LEGACY: old Vite frontend
 ```
 
 ---
 
 ## Getting Started
 
-### Next.js Client
+**Full setup, deployment, and troubleshooting guide: [RUNNING.md](RUNNING.md)**
 
 ```bash
 cd next-client
+cp .env.example .env.local   # fill in MONGODB_URI, NEXT_PUBLIC_MAPBOX_TOKEN, GEMINI_API_KEY
 npm install
-cp .env.example .env.local
-npm run dev
+npm run dev                  # http://localhost:3000
 ```
 
-### Environment Variables
-
-```env
-MONGODB_URI=mongodb+srv://...
-MONGODB_DB=disease-data
-NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ...
-```
-
-### Appwrite Functions
+Trigger the pipeline manually while developing:
 
 ```bash
-appwrite deploy function
+curl http://localhost:3000/api/cron/poll     # crawl due sources
+curl http://localhost:3000/api/cron/analyse  # Gemini analysis + geocoding
 ```
 
-Functions auto-trigger on cron schedules:
-- `job-pooler`: every 10 minutes
-- `analyse-article`: every 5 minutes
-
-### Legacy Server (Optional)
+Verify the whole pipeline end-to-end without any API keys:
 
 ```bash
-pip install -r requirements.txt
-# Requires: Tesseract OCR, poppler (for pdf2image)
-python main.py
+npm run smoke
 ```
+
+In production the same two endpoints run on Vercel Cron (`next-client/vercel.json`): poll every 10 minutes, analyse every 5 minutes. On the Vercel Hobby plan use the bundled [GitHub Actions scheduler](.github/workflows/pipeline-cron.yml) instead.
 
 ---
 
