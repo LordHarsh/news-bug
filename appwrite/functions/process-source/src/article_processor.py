@@ -203,7 +203,8 @@ Return the results as a JSON object with a 'results' array containing the analys
 
 def main():
     """Example usage of the ArticleProcessor"""
-    api_key = "AIzaSyDUkgnO6nZb7icJKsOdpecdPNErwcol8XY"
+    import os
+    api_key = os.environ["GEMINI_API_KEY"]
     processor = ArticleProcessor(api_key)
 
     # Set disease keywords

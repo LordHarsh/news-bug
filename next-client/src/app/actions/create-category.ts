@@ -1,5 +1,5 @@
 'use server';
-import db from '@/lib/mongodb';
+import { getDb } from '@/lib/mongodb';
 import Category from '@/lib/types/category';
 
 
@@ -15,7 +15,7 @@ export async function createCategory(
   }
 ) {
   try {
-    const categoriesCollection = db.collection('categories');
+    const categoriesCollection = (await getDb()).collection('categories');
     // Validate the input
     if (!title) {
       throw new Error('Title is required');

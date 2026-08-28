@@ -1,6 +1,6 @@
 'use server';
 
-import db from "@/lib/mongodb";
+import { getDb } from '@/lib/mongodb';
 import { z } from "zod";
 import { validateCronExpression } from '@/lib/cron-validator';
 import { Source } from "@/lib/types/souces";
@@ -52,7 +52,7 @@ export async function createSource(prevState: FormState, formData: FormData): Pr
     }
 
     try {
-        const sourcesCollection = db.collection("sources");
+        const sourcesCollection = (await getDb()).collection("sources");
 
         // Create the initial source document
         const now = new Date();

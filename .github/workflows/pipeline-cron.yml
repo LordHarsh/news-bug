@@ -1,0 +1,41 @@
+# Free alternative scheduler for the NewsBug pipeline.
+#
+# Vercel's Hobby plan only allows once-per-day cron jobs, so this workflow
+# pings the pipeline endpoints on a schedule instead. On Vercel Pro you can
+# rely on next-client/vercel.json crons and disable this workflow.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   PIPELINE_BASE_URL  e.g. https://your-app.vercel.app
+#   CRON_SECRET        same value as the CRON_SECRET env var on Vercel
+name: Pipeline cron
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poll sources + crawl
+        env:
+          BASE_URL: ${{ secrets.PIPELINE_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "PIPELINE_BASE_URL / CRON_SECRET secrets not set; skipping."
+            exit 0
+          fi
+          curl -sS --max-time 300 -H "Authorization: Bearer $CRON_SECRET" "$BASE_URL/api/cron/poll"
+
+      - name: Analyse crawled articles
+        env:
+          BASE_URL: ${{ secrets.PIPELINE_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "PIPELINE_BASE_URL / CRON_SECRET secrets not set; skipping."
+            exit 0
+          fi
+          curl -sS --max-time 300 -H "Authorization: Bearer $CRON_SECRET" "$BASE_URL/api/cron/analyse"

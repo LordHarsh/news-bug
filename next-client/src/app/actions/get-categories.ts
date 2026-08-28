@@ -1,11 +1,11 @@
 'use server';
 
-import db from '@/lib/mongodb';
+import { getDb } from '@/lib/mongodb';
 import Category from '@/lib/types/category';
 
 export async function getCategories() {
   try {
-    const categories = db.collection('categories');
+    const categories = (await getDb()).collection('categories');
     const result = (await categories.find({}).toArray()).map(doc => ({
       id: doc._id.toString(),
       title: doc.title,

@@ -1,6 +1,6 @@
 "use server";
 
-import db from '@/lib/mongodb';
+import { getDb } from '@/lib/mongodb';
 import { KeywordDetails } from "@/lib/types/keyword";
 import { ObjectId, UUID } from 'mongodb';
 import { BSON } from 'mongodb';
@@ -42,7 +42,7 @@ export async function getKeywords({ categoryId }: { categoryId: string }) {
                 }
             }
         ]
-        const keywordCollection = (db.collection('articles'));
+        const keywordCollection = ((await getDb()).collection('articles'));
 
         const result: KeywordDetails[] = (await keywordCollection.aggregate(pipeline).toArray()).map((doc, i) => {
             return {
